@@ -4,21 +4,21 @@
  * Manages the 8x8 grid as a 1D array with state machine:
  * IDLE -> SWAPPING -> MATCHING -> FALLING -> REFILLING
  * 
- * Uses flood-fill algorithm for match detection (3+ connected same-color gems)
+ * Uses flood-fill algorithm for match detection (3+ connected same-color elements)
  */
 
 import { useCallback, useRef } from 'react';
 import { runOnJS } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import {
-  Gem,
-  GemColor,
+  Element,
+  ElementColor,
   GamePhase,
   MatchResult,
   GRID_SIZE,
   TOTAL_CELLS,
   MIN_MATCH,
-  ALL_GEM_COLORS,
+  ALL_ELEMENT_TYPES,
   areAdjacent,
   isValidIndex,
   indexToPosition,
@@ -31,25 +31,25 @@ import { useGameStore } from '../store/gameStore';
 // ============================================================================
 
 /**
- * Generate a unique gem ID
+ * Generate a unique element ID
  */
-function generateGemId(): string {
-  return `gem_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+function generateElementId(): string {
+  return `element_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 }
 
 /**
- * Get random gem color
+ * Get random element color
  */
-function getRandomColor(): GemColor {
-  return ALL_GEM_COLORS[Math.floor(Math.random() * ALL_GEM_COLORS.length)];
+function getRandomColor(): ElementColor {
+  return ALL_ELEMENT_TYPES[Math.floor(Math.random() * ALL_ELEMENT_TYPES.length)];
 }
 
 /**
- * Create a new gem at the specified index
+ * Create a new element at the specified index
  */
-function createGem(index: number, color?: GemColor): Gem {
+function createElement(index: number, color?: ElementColor): Element {
   return {
-    id: generateGemId(),
+    id: generateElementId(),
     color: color ?? getRandomColor(),
     index,
     isMatched: false,
@@ -61,7 +61,7 @@ function createGem(index: number, color?: GemColor): Gem {
  * Check if placing a color at index would create an immediate match
  * Used during grid initialization to prevent starting with matches
  */
-function wouldCreateMatch(grid: (Gem | null)[], index: number, color: GemColor): boolean {
+function wouldCreateMatch(grid: (Element | null)[], index: number, color: ElementColor): boolean {
   const row = Math.floor(index / GRID_SIZE);
   const col = index % GRID_SIZE;
 
@@ -89,8 +89,8 @@ function wouldCreateMatch(grid: (Gem | null)[], index: number, color: GemColor):
 /**
  * Generate initial grid without any matches
  */
-function generateInitialGrid(): Gem[] {
-  const grid: (Gem | null)[] = new Array(TOTAL_CELLS).fill(null);
+function generateInitialGrid(): Element[] {
+  const grid: (Element | null)[] = new Array(TOTAL_CELLS).fill(null);
 
   for (let i = 0; i < TOTAL_CELLS; i++) {
     let color = getRandomColor();
@@ -103,10 +103,10 @@ function generateInitialGrid(): Gem[] {
       attempts++;
     }
 
-    grid[i] = createGem(i, color);
+    grid[i] = createElement(i, color);
   }
 
-  return grid as Gem[];
+  return grid as Element[];
 }
 
 // ============================================================================
@@ -116,7 +116,7 @@ function generateInitialGrid(): Gem[] {
 /**
  * Find all horizontal matches in the grid
  */
-function findHorizontalMatches(grid: Gem[]): Set<number> {
+function findHorizontalMatches(grid: Element[]): Set<number> {
   const matched = new Set<number>();
 
   for (let row = 0; row < GRID_SIZE; row++) {
@@ -126,9 +126,9 @@ function findHorizontalMatches(grid: Gem[]): Set<number> {
 
     for (let col = 1; col < GRID_SIZE; col++) {
       const index = row * GRID_SIZE + col;
-      const gem = grid[index];
+      const element = grid[index];
 
-      if (gem.color === matchColor) {
+      if (element.color === matchColor) {
         matchLength++;
       } else {
         // End of potential match, check if valid
@@ -139,7 +139,7 @@ function findHorizontalMatches(grid: Gem[]): Set<number> {
         }
         // Reset for new potential match
         matchStart = col;
-        matchColor = gem.color;
+        matchColor = element.color;
         matchLength = 1;
       }
     }
@@ -158,7 +158,7 @@ function findHorizontalMatches(grid: Gem[]): Set<number> {
 /**
  * Find all vertical matches in the grid
  */
-function findVerticalMatches(grid: Gem[]): Set<number> {
+function findVerticalMatches(grid: Element[]): Set<number> {
   const matched = new Set<number>();
 
   for (let col = 0; col < GRID_SIZE; col++) {
@@ -168,9 +168,9 @@ function findVerticalMatches(grid: Gem[]): Set<number> {
 
     for (let row = 1; row < GRID_SIZE; row++) {
       const index = row * GRID_SIZE + col;
-      const gem = grid[index];
+      const element = grid[index];
 
-      if (gem.color === matchColor) {
+      if (element.color === matchColor) {
         matchLength++;
       } else {
         // End of potential match
@@ -180,7 +180,7 @@ function findVerticalMatches(grid: Gem[]): Set<number> {
           }
         }
         matchStart = row;
-        matchColor = gem.color;
+        matchColor = element.color;
         matchLength = 1;
       }
     }
@@ -198,9 +198,9 @@ function findVerticalMatches(grid: Gem[]): Set<number> {
 
 /**
  * Flood fill to find connected matches (for special detection)
- * Uses BFS to find all connected gems of the same color
+ * Uses BFS to find all connected elements of the same color
  */
-function floodFill(grid: Gem[], startIndex: number, visited: Set<number>): number[] {
+function floodFill(grid: Element[], startIndex: number, visited: Set<number>): number[] {
   const connected: number[] = [];
   const queue: number[] = [startIndex];
   const targetColor = grid[startIndex].color;
@@ -211,8 +211,8 @@ function floodFill(grid: Gem[], startIndex: number, visited: Set<number>): numbe
     if (visited.has(current)) continue;
     visited.add(current);
 
-    const gem = grid[current];
-    if (gem.color !== targetColor) continue;
+    const element = grid[current];
+    if (element.color !== targetColor) continue;
 
     connected.push(current);
 
@@ -239,7 +239,7 @@ function floodFill(grid: Gem[], startIndex: number, visited: Set<number>): numbe
 /**
  * Main match detection combining horizontal, vertical, and flood fill
  */
-function detectAllMatches(grid: Gem[]): MatchResult[] {
+function detectAllMatches(grid: Element[]): MatchResult[] {
   const horizontalMatches = findHorizontalMatches(grid);
   const verticalMatches = findVerticalMatches(grid);
   
@@ -267,7 +267,7 @@ function detectAllMatches(grid: Gem[]): MatchResult[] {
       results.push({
         matchedIndices: matchedConnected,
         count: matchedConnected.length,
-        isSpecial: matchedConnected.length >= 4, // 4+ gems = special
+        isSpecial: matchedConnected.length >= 4, // 4+ elements = special
       });
     }
   }
@@ -280,14 +280,14 @@ function detectAllMatches(grid: Gem[]): MatchResult[] {
 // ============================================================================
 
 /**
- * Apply gravity - gems fall down to fill empty spaces
+ * Apply gravity - elements fall down to fill empty spaces
  * Returns the new grid and a map of movements (fromIndex -> toIndex)
  */
-function applyGravity(grid: Gem[]): { 
-  newGrid: (Gem | null)[]; 
+function applyGravity(grid: Element[]): { 
+  newGrid: (Element | null)[]; 
   movements: Map<number, number>;
-} {
-  const newGrid: (Gem | null)[] = [...grid];
+ } {
+  const newGrid: (Element | null)[] = [...grid];
   const movements = new Map<number, number>();
 
   // Process column by column, bottom to top
@@ -297,15 +297,15 @@ function applyGravity(grid: Gem[]): {
     // Scan from bottom to top
     for (let row = GRID_SIZE - 1; row >= 0; row--) {
       const readIndex = row * GRID_SIZE + col;
-      const gem = newGrid[readIndex];
+      const element = newGrid[readIndex];
 
-      if (gem && !gem.isMatched) {
+      if (element && !element.isMatched) {
         const writeIndex = writePos * GRID_SIZE + col;
         
         if (writeIndex !== readIndex) {
-          // Move gem down
+          // Move element down
           movements.set(readIndex, writeIndex);
-          newGrid[writeIndex] = { ...gem, index: writeIndex };
+          newGrid[writeIndex] = { ...element, index: writeIndex };
           newGrid[readIndex] = null;
         }
         
@@ -324,14 +324,14 @@ function applyGravity(grid: Gem[]): {
 }
 
 /**
- * Fill empty cells with new gems
+ * Fill empty cells with new elements
  */
-function refillEmptyCells(grid: (Gem | null)[]): Gem[] {
-  return grid.map((gem, index) => {
-    if (gem === null) {
-      return createGem(index);
+function refillEmptyCells(grid: (Element | null)[]): Element[] {
+  return grid.map((element, index) => {
+    if (element === null) {
+      return createElement(index);
     }
-    return gem;
+    return element;
   });
 }
 
@@ -341,7 +341,7 @@ function refillEmptyCells(grid: (Gem | null)[]): Gem[] {
 
 export interface UseMatch3EngineReturn {
   // State
-  grid: Gem[];
+  grid: Element[];
   phase: GamePhase;
   selectedIndex: number;
   score: number;
@@ -349,12 +349,16 @@ export interface UseMatch3EngineReturn {
   
   // Actions
   initializeGame: () => void;
-  handleGemTap: (index: number) => void;
+  handleElementTap: (index: number) => void;
   processGameLoop: () => Promise<void>;
   
   // Utilities
-  getGemAt: (index: number) => Gem | undefined;
+  getElementAt: (index: number) => Element | undefined;
   isValidSwap: (from: number, to: number) => boolean;
+  
+  // Legacy aliases
+  handleGemTap: (index: number) => void;
+  getGemAt: (index: number) => Element | undefined;
 }
 
 export function useMatch3Engine(): UseMatch3EngineReturn {
@@ -386,9 +390,9 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
   }, [setGrid, setPhase, setSelectedIndex, resetCombo]);
 
   /**
-   * Get gem at specific index
+   * Get element at specific index
    */
-  const getGemAt = useCallback((index: number): Gem | undefined => {
+  const getElementAt = useCallback((index: number): Element | undefined => {
     if (!isValidIndex(index)) return undefined;
     return grid[index];
   }, [grid]);
@@ -402,9 +406,9 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
   }, []);
 
   /**
-   * Handle gem tap - select or attempt swap
+   * Handle element tap - select or attempt swap
    */
-  const handleGemTap = useCallback((index: number) => {
+  const handleElementTap = useCallback((index: number) => {
     if (phase !== 'IDLE') return;
     if (!isValidIndex(index)) return;
 
@@ -412,16 +416,16 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     if (selectedIndex === -1) {
-      // No gem selected - select this one
+      // No element selected - select this one
       setSelectedIndex(index);
     } else if (selectedIndex === index) {
-      // Tapped same gem - deselect
+      // Tapped same element - deselect
       setSelectedIndex(-1);
     } else if (areAdjacent(selectedIndex, index)) {
-      // Adjacent gem - attempt swap
+      // Adjacent element - attempt swap
       performSwap(selectedIndex, index);
     } else {
-      // Non-adjacent - select new gem
+      // Non-adjacent - select new element
       setSelectedIndex(index);
     }
   }, [phase, selectedIndex, setSelectedIndex]);
@@ -436,7 +440,7 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     setPhase('SWAPPING');
     setSelectedIndex(-1);
 
-    // Swap gems in grid
+    // Swap elements in grid
     const newGrid = [...grid];
     const temp = { ...newGrid[fromIndex], index: toIndex };
     newGrid[fromIndex] = { ...newGrid[toIndex], index: fromIndex };
@@ -478,7 +482,7 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
   /**
    * Process match cascade (matches -> fall -> refill -> repeat)
    */
-  const processCascade = useCallback(async (currentGrid: Gem[]) => {
+  const processCascade = useCallback(async (currentGrid: Element[]) => {
     let workingGrid = [...currentGrid];
     let cascadeCount = 0;
 
@@ -489,11 +493,11 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
       
       if (matches.length === 0) break;
 
-      // Mark matched gems
+      // Mark matched elements
       const matchedIndices = new Set(matches.flatMap(m => m.matchedIndices));
-      workingGrid = workingGrid.map(gem => ({
-        ...gem,
-        isMatched: matchedIndices.has(gem.index),
+      workingGrid = workingGrid.map(element => ({
+        ...element,
+        isMatched: matchedIndices.has(element.index),
       }));
       setGrid(workingGrid);
 
@@ -554,9 +558,12 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     score,
     combo,
     initializeGame,
-    handleGemTap,
+    handleElementTap,
     processGameLoop,
-    getGemAt,
+    getElementAt,
     isValidSwap,
+    // Legacy aliases
+    handleGemTap: handleElementTap,
+    getGemAt: getElementAt,
   };
 }

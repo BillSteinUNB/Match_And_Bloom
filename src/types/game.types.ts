@@ -1,6 +1,6 @@
 /**
- * Game Type Definitions for Dopamine Match
- * Match-3 Game Engine Types
+ * Game Type Definitions for Match & Bloom
+ * Match-3 Game Engine Types - Botanical Zen Edition
  */
 
 // ============================================================================
@@ -8,55 +8,71 @@
 // ============================================================================
 
 /**
- * Available gem colors in the Digital Opulence palette
+ * Element types representing natural forces
+ * Each has a unique organic shape and color
  */
-export type GemColor = 
-  | 'electric-pink'    // #FF007F
-  | 'sunset-orange'    // #FF6600
-  | 'royal-purple'     // #8B00FF
-  | 'cyber-blue'       // #00D4FF
-  | 'neon-green'       // #00FF88
-  | 'golden-amber';    // #FFB800
+export type ElementType = 
+  | 'water'   // Blue Teardrop - Flow & Calm
+  | 'sun'     // Yellow Circle - Warmth & Energy
+  | 'leaf'    // Green Rhombus - Growth & Nature
+  | 'bloom';  // Pink Flower - Beauty & Life
 
 /**
- * Hex color mapping for Skia rendering
+ * Hex color mapping for Skia rendering - Soft Pastels
  */
-export const GEM_COLORS: Record<GemColor, string> = {
-  'electric-pink': '#FF007F',
-  'sunset-orange': '#FF6600',
-  'royal-purple': '#8B00FF',
-  'cyber-blue': '#00D4FF',
-  'neon-green': '#00FF88',
-  'golden-amber': '#FFB800',
+export const ELEMENT_COLORS: Record<ElementType, string> = {
+  'water': '#87CEEB',   // Sky Blue
+  'sun': '#FFD93D',     // Warm Yellow
+  'leaf': '#A0E8AF',    // Soft Green
+  'bloom': '#FFB7C5',   // Petal Pink
 } as const;
 
 /**
- * Gradient pairs for 3D gummy effect
+ * Gradient pairs for watercolor effect - soft transitions
  */
-export const GEM_GRADIENTS: Record<GemColor, [string, string]> = {
-  'electric-pink': ['#FF4DA6', '#CC0066'],
-  'sunset-orange': ['#FF9933', '#CC5200'],
-  'royal-purple': ['#B84DFF', '#6600CC'],
-  'cyber-blue': ['#4DE0FF', '#00A3CC'],
-  'neon-green': ['#4DFFAA', '#00CC6A'],
-  'golden-amber': ['#FFCC4D', '#CC9200'],
+export const ELEMENT_GRADIENTS: Record<ElementType, [string, string]> = {
+  'water': ['#B0E2FF', '#5CACCE'],   // Light to deep blue
+  'sun': ['#FFE566', '#E6C235'],     // Bright to warm yellow
+  'leaf': ['#C4F5CE', '#7AC98A'],    // Light to deep green
+  'bloom': ['#FFD4DE', '#E8A0AE'],   // Light to deep pink
 } as const;
 
 /**
- * Individual gem in the grid
+ * Secondary accent colors for glow/highlight effects
  */
-export interface Gem {
+export const ELEMENT_ACCENTS: Record<ElementType, string> = {
+  'water': '#E0F7FA',   // Ice white-blue
+  'sun': '#FFF8E1',     // Cream yellow
+  'leaf': '#E8F5E9',    // Mint white
+  'bloom': '#FCE4EC',   // Blush white
+} as const;
+
+// Legacy type alias for backward compatibility
+export type ElementColor = ElementType;
+export const ELEMENT_COLORS_MAP: Record<ElementType, string> = ELEMENT_COLORS;
+export const ELEMENT_GRADIENTS_MAP: Record<ElementType, [string, string]> = ELEMENT_GRADIENTS;
+export type GemColor = ElementType;
+export const GEM_COLORS = ELEMENT_COLORS;
+export const GEM_GRADIENTS = ELEMENT_GRADIENTS;
+
+/**
+ * Individual tile/element in the grid
+ */
+export interface Element {
   /** Unique identifier for React keys and animation tracking */
   id: string;
-  /** Gem color type */
-  color: GemColor;
+  /** Element type (water, sun, leaf, bloom) */
+  color: ElementType;
   /** Grid position index (0-63 for 8x8 grid) */
   index: number;
-  /** Whether gem is marked for removal */
+  /** Whether element is marked for removal */
   isMatched: boolean;
-  /** Whether gem is currently selected by user */
+  /** Whether element is currently selected by user */
   isSelected: boolean;
 }
+
+// Legacy alias for backward compatibility
+export type Gem = Element;
 
 /**
  * Grid coordinates helper type
@@ -67,7 +83,7 @@ export interface GridPosition {
 }
 
 /**
- * Swap operation between two gems
+ * Swap operation between two elements
  */
 export interface SwapOperation {
   fromIndex: number;
@@ -84,18 +100,18 @@ export interface SwapOperation {
  */
 export type GamePhase = 
   | 'IDLE'       // Waiting for player input
-  | 'SWAPPING'   // Animating gem swap
+  | 'SWAPPING'   // Animating element swap
   | 'MATCHING'   // Detecting and marking matches
-  | 'FALLING'    // Gems falling to fill gaps
-  | 'REFILLING'; // New gems spawning at top
+  | 'FALLING'    // Elements falling to fill gaps
+  | 'REFILLING'; // New elements spawning at top
 
 /**
  * Match result from flood-fill detection
  */
 export interface MatchResult {
-  /** Indices of matched gems */
+  /** Indices of matched elements */
   matchedIndices: number[];
-  /** Number of gems in the match */
+  /** Number of elements in the match */
   count: number;
   /** Whether this is a special match (4+, L-shape, etc.) */
   isSpecial: boolean;
@@ -106,14 +122,14 @@ export interface MatchResult {
  */
 export interface GameState {
   /** Current grid state (1D array, 64 elements for 8x8) */
-  grid: Gem[];
+  grid: Element[];
   /** Current game phase */
   phase: GamePhase;
-  /** Player score */
+  /** Player score (Team Contribution) */
   score: number;
   /** Current combo multiplier */
   combo: number;
-  /** Currently selected gem index (-1 if none) */
+  /** Currently selected element index (-1 if none) */
   selectedIndex: number;
   /** Grid dimensions */
   gridSize: number;
@@ -125,15 +141,15 @@ export interface GameState {
 export interface GameActions {
   /** Initialize a new grid */
   initializeGrid: () => void;
-  /** Select a gem at index */
-  selectGem: (index: number) => void;
+  /** Select an element at index */
+  selectElement: (index: number) => void;
   /** Attempt swap between selected and target */
-  swapGems: (fromIndex: number, toIndex: number) => void;
+  swapElements: (fromIndex: number, toIndex: number) => void;
   /** Find and mark all matches */
   findMatches: () => MatchResult[];
-  /** Remove matched gems and drop remaining */
+  /** Remove matched elements and drop remaining */
   processMatches: () => void;
-  /** Fill empty spaces with new gems */
+  /** Fill empty spaces with new elements */
   refillGrid: () => void;
   /** Set game phase */
   setPhase: (phase: GamePhase) => void;
@@ -159,25 +175,44 @@ export interface SpringConfig {
 }
 
 /**
- * Default spring config for gem movements
- * Tuned for "tactile satisfaction"
+ * Default spring config for element movements
+ * Tuned for "floating petals" - gentle, organic motion
  */
 export const DEFAULT_SPRING_CONFIG: SpringConfig = {
   mass: 0.5,
-  damping: 12,
-  stiffness: 100,
+  damping: 20,      // Increased from 12 for smoother, gentler motion
+  stiffness: 80,    // Slightly reduced for floatier feel
 } as const;
 
 /**
- * Gem position for Skia rendering
+ * Element position for Skia rendering
  */
-export interface GemRenderPosition {
+export interface ElementRenderPosition {
   x: number;
   y: number;
 }
 
+// Legacy alias
+export type GemRenderPosition = ElementRenderPosition;
+
 // ============================================================================
-// CONSTANTS
+// THEME CONSTANTS
+// ============================================================================
+
+/**
+ * Background colors for the Botanical Zen theme
+ */
+export const THEME_COLORS = {
+  paper: '#FDFBF7',
+  paperCream: '#F5F0E6',
+  soil: '#4A4A4A',
+  goldBorder: '#D4AF37',
+  frostedWhite: 'rgba(255, 255, 255, 0.7)',
+  gardenGradient: ['#E0F7FA', '#F3E5F5'] as [string, string],
+} as const;
+
+// ============================================================================
+// GRID CONSTANTS
 // ============================================================================
 
 export const GRID_SIZE = 8;
@@ -185,16 +220,17 @@ export const TOTAL_CELLS = GRID_SIZE * GRID_SIZE; // 64
 export const MIN_MATCH = 3;
 
 /**
- * All available gem colors as array for random selection
+ * All available element types for random selection
  */
-export const ALL_GEM_COLORS: GemColor[] = [
-  'electric-pink',
-  'sunset-orange', 
-  'royal-purple',
-  'cyber-blue',
-  'neon-green',
-  'golden-amber',
+export const ALL_ELEMENT_TYPES: ElementType[] = [
+  'water',
+  'sun',
+  'leaf',
+  'bloom',
 ];
+
+// Legacy alias
+export const ALL_GEM_COLORS = ALL_ELEMENT_TYPES;
 
 // ============================================================================
 // HELPER TYPE GUARDS

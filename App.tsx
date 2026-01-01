@@ -1,7 +1,7 @@
 /**
- * Dopamine Match - Main Application Entry Point
+ * Match & Bloom - Main Application Entry Point
  * 
- * A Match-3 game with "Digital Opulence" aesthetic.
+ * A Match-3 game with "Botanical Zen" aesthetic.
  * Built with Expo, React Native Skia, and Reanimated.
  */
 
@@ -13,7 +13,61 @@ import { useGameStore } from './src/store';
 import './global.css';
 
 // ============================================================================
-// HUD COMPONENT
+// THEME CONSTANTS - Botanical Zen
+// ============================================================================
+
+const COLORS = {
+  paper: '#FDFBF7',
+  paperCream: '#F5F0E6',
+  soil: '#4A4A4A',
+  soilLight: '#6B6B6B',
+  goldBorder: '#D4AF37',
+  goldLight: '#E8C84B',
+  petalPink: '#FFB7C5',
+  leafGreen: '#A0E8AF',
+  frostedWhite: 'rgba(255, 255, 255, 0.7)',
+  frostedBorder: 'rgba(212, 175, 55, 0.3)',
+};
+
+// ============================================================================
+// GUARDIAN AVATAR COMPONENT
+// ============================================================================
+
+const GuardianAvatar: React.FC = () => {
+  return (
+    <View style={styles.avatarContainer}>
+      <View style={styles.avatarCircle}>
+        <Text style={styles.avatarEmoji}>🌸</Text>
+      </View>
+    </View>
+  );
+};
+
+// ============================================================================
+// TEAM CONTRIBUTION BAR (Progress Bar)
+// ============================================================================
+
+interface ContributionBarProps {
+  score: number;
+  maxScore?: number;
+}
+
+const ContributionBar: React.FC<ContributionBarProps> = ({ score, maxScore = 10000 }) => {
+  const progress = Math.min(score / maxScore, 1);
+  
+  return (
+    <View style={styles.contributionContainer}>
+      <Text style={styles.contributionLabel}>Garden Growth</Text>
+      <View style={styles.progressBarOuter}>
+        <View style={[styles.progressBarInner, { width: `${progress * 100}%` }]} />
+      </View>
+      <Text style={styles.contributionValue}>{score.toLocaleString()}</Text>
+    </View>
+  );
+};
+
+// ============================================================================
+// HUD COMPONENT - Frosted Glass Style
 // ============================================================================
 
 interface HUDProps {
@@ -25,21 +79,23 @@ interface HUDProps {
 const HUD: React.FC<HUDProps> = ({ score, combo, highScore }) => {
   return (
     <View style={styles.hud}>
-      <View style={styles.hudItem}>
-        <Text style={styles.hudLabel}>SCORE</Text>
-        <Text style={styles.hudValue}>{score.toLocaleString()}</Text>
-      </View>
+      {/* Guardian Avatar - Left */}
+      <GuardianAvatar />
       
-      {combo > 0 && (
+      {/* Center - Contribution Bar or Combo */}
+      {combo > 0 ? (
         <View style={styles.comboContainer}>
           <Text style={styles.comboText}>x{combo}</Text>
-          <Text style={styles.comboLabel}>COMBO</Text>
+          <Text style={styles.comboLabel}>BLOOM CHAIN</Text>
         </View>
+      ) : (
+        <ContributionBar score={score} />
       )}
       
+      {/* Best Score - Right */}
       <View style={styles.hudItem}>
         <Text style={styles.hudLabel}>BEST</Text>
-        <Text style={styles.hudValueSmall}>{highScore.toLocaleString()}</Text>
+        <Text style={styles.hudValue}>{highScore.toLocaleString()}</Text>
       </View>
     </View>
   );
@@ -64,12 +120,12 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
       <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor="#190028" />
+        <StatusBar barStyle="dark-content" backgroundColor={COLORS.paper} />
         
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>DOPAMINE MATCH</Text>
-          <Text style={styles.subtitle}>Digital Opulence Edition</Text>
+          <Text style={styles.title}>Match & Bloom</Text>
+          <Text style={styles.subtitle}>Botanical Zen Edition</Text>
         </View>
 
         {/* HUD */}
@@ -89,7 +145,7 @@ export default function App() {
             ]}
             onPress={handleNewGame}
           >
-            <Text style={styles.buttonText}>NEW GAME</Text>
+            <Text style={styles.buttonText}>New Garden</Text>
           </Pressable>
         </View>
       </SafeAreaView>
@@ -98,7 +154,7 @@ export default function App() {
 }
 
 // ============================================================================
-// STYLES - Digital Opulence Theme
+// STYLES - Botanical Zen Theme
 // ============================================================================
 
 const styles = StyleSheet.create({
@@ -107,107 +163,186 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: '#190028', // Deep purple dark
+    backgroundColor: COLORS.paper,
     alignItems: 'center',
   },
+  
+  // Header
   header: {
-    paddingTop: 20,
-    paddingBottom: 10,
+    paddingTop: 16,
+    paddingBottom: 8,
     alignItems: 'center',
   },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#FF007F', // Electric pink
-    letterSpacing: 4,
-    textShadowColor: 'rgba(255, 0, 127, 0.5)',
-    textShadowOffset: { width: 0, height: 0 },
-    textShadowRadius: 20,
+    fontSize: 32,
+    fontWeight: '600',
+    color: COLORS.soil,
+    letterSpacing: 1,
+    // Note: For true Nunito/Lora fonts, would need expo-font
   },
   subtitle: {
     fontSize: 12,
     fontWeight: '400',
-    color: '#FF6600', // Sunset orange
-    letterSpacing: 2,
-    marginTop: 4,
+    color: COLORS.soilLight,
+    letterSpacing: 1.5,
+    marginTop: 2,
   },
+  
+  // HUD
   hud: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     width: '100%',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  hudItem: {
+  
+  // Guardian Avatar
+  avatarContainer: {
+    width: 56,
     alignItems: 'center',
   },
-  hudLabel: {
+  avatarCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.frostedWhite,
+    borderWidth: 2,
+    borderColor: COLORS.goldBorder,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORS.goldBorder,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  avatarEmoji: {
+    fontSize: 24,
+  },
+  
+  // Contribution Bar
+  contributionContainer: {
+    flex: 1,
+    marginHorizontal: 12,
+    alignItems: 'center',
+    backgroundColor: COLORS.frostedWhite,
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: COLORS.frostedBorder,
+  },
+  contributionLabel: {
     fontSize: 10,
     fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.5)',
-    letterSpacing: 2,
+    color: COLORS.soilLight,
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  progressBarOuter: {
+    width: '100%',
+    height: 8,
+    backgroundColor: COLORS.paperCream,
+    borderRadius: 4,
+    overflow: 'hidden',
+  },
+  progressBarInner: {
+    height: '100%',
+    backgroundColor: COLORS.leafGreen,
+    borderRadius: 4,
+  },
+  contributionValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: COLORS.soil,
+    marginTop: 4,
+  },
+  
+  // HUD Items
+  hudItem: {
+    alignItems: 'center',
+    backgroundColor: COLORS.frostedWhite,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.frostedBorder,
+  },
+  hudLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: COLORS.soilLight,
+    letterSpacing: 1.5,
   },
   hudValue: {
-    fontSize: 32,
+    fontSize: 16,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: COLORS.soil,
     marginTop: 2,
   },
-  hudValueSmall: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: 'rgba(255, 255, 255, 0.7)',
-    marginTop: 2,
-  },
+  
+  // Combo Container
   comboContainer: {
+    flex: 1,
+    marginHorizontal: 12,
     alignItems: 'center',
-    backgroundColor: 'rgba(255, 102, 0, 0.2)',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    backgroundColor: 'rgba(255, 183, 197, 0.3)', // Petal pink transparent
+    paddingHorizontal: 20,
+    paddingVertical: 10,
     borderRadius: 20,
-    borderWidth: 1,
-    borderColor: '#FF6600',
+    borderWidth: 2,
+    borderColor: COLORS.petalPink,
   },
   comboText: {
-    fontSize: 24,
+    fontSize: 28,
     fontWeight: '800',
-    color: '#FF6600',
+    color: COLORS.petalPink,
   },
   comboLabel: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: '600',
-    color: '#FF6600',
+    color: COLORS.soil,
     letterSpacing: 1,
   },
+  
+  // Board Container
   boardContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingHorizontal: 8,
   },
+  
+  // Footer
   footer: {
-    paddingVertical: 24,
+    paddingVertical: 20,
     paddingHorizontal: 24,
     width: '100%',
     alignItems: 'center',
   },
   button: {
-    backgroundColor: 'rgba(255, 0, 127, 0.2)',
-    paddingHorizontal: 32,
+    backgroundColor: COLORS.frostedWhite,
+    paddingHorizontal: 36,
     paddingVertical: 14,
-    borderRadius: 30,
+    borderRadius: 24,
     borderWidth: 2,
-    borderColor: '#FF007F',
+    borderColor: COLORS.goldBorder,
+    shadowColor: COLORS.goldBorder,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3,
   },
   buttonPressed: {
-    backgroundColor: 'rgba(255, 0, 127, 0.4)',
+    backgroundColor: COLORS.paperCream,
     transform: [{ scale: 0.98 }],
   },
   buttonText: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: '#FF007F',
-    letterSpacing: 2,
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.soil,
+    letterSpacing: 1,
   },
 });

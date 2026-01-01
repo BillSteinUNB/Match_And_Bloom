@@ -5,7 +5,7 @@
  */
 
 import { create } from 'zustand';
-import { Gem, GamePhase, TOTAL_CELLS } from '../types';
+import { Element, GamePhase, TOTAL_CELLS } from '../types';
 
 // ============================================================================
 // STORE INTERFACE
@@ -13,7 +13,7 @@ import { Gem, GamePhase, TOTAL_CELLS } from '../types';
 
 interface GameStore {
   // State
-  grid: Gem[];
+  grid: Element[];
   phase: GamePhase;
   selectedIndex: number;
   score: number;
@@ -21,7 +21,7 @@ interface GameStore {
   highScore: number;
   
   // Actions
-  setGrid: (grid: Gem[]) => void;
+  setGrid: (grid: Element[]) => void;
   setPhase: (phase: GamePhase) => void;
   setSelectedIndex: (index: number) => void;
   addScore: (points: number) => void;
@@ -36,7 +36,7 @@ interface GameStore {
 // ============================================================================
 
 const initialState = {
-  grid: [] as Gem[],
+  grid: [] as Element[],
   phase: 'IDLE' as GamePhase,
   selectedIndex: -1,
   score: 0,
@@ -53,7 +53,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   ...initialState,
 
   // Grid management
-  setGrid: (grid: Gem[]) => set({ grid }),
+  setGrid: (grid: Element[]) => set({ grid }),
 
   // Phase management
   setPhase: (phase: GamePhase) => set({ phase }),
