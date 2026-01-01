@@ -7,10 +7,12 @@
  * - Soft paper/garden background
  * - Floating petal physics (gentle spring animations)
  * - Bloom effect on match (scale + rotate)
+ * - Swipe gesture support via InputController
+ * - Contribution particle system for social mechanics
  */
 
-import React, { useEffect, useMemo, useCallback } from 'react';
-import { Dimensions, StyleSheet } from 'react-native';
+import React, { useEffect, useMemo, useCallback, useRef } from 'react';
+import { Dimensions, StyleSheet, View } from 'react-native';
 import { 
   Canvas, 
   Group, 
@@ -18,7 +20,6 @@ import {
   LinearGradient, 
   RadialGradient,
   vec,
-  Rect,
   BlurMask,
 } from '@shopify/react-native-skia';
 import {
@@ -28,16 +29,20 @@ import {
   withSequence,
   runOnJS,
 } from 'react-native-reanimated';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import { ElementNode } from './ElementNode';
+import { InputController } from './InputController';
+import { ContributionParticle } from './ContributionParticle';
 import { useMatch3Engine } from '../hooks';
 import { 
   GRID_SIZE, 
   DEFAULT_SPRING_CONFIG, 
+  PETAL_FLOAT_SPRING,
+  BLOOM_ANIMATION_CONFIG,
   indexToPosition,
   THEME_COLORS,
   ElementType,
 } from '../types';
+import { useGameStore } from '../store';
 
 // ============================================================================
 // CONSTANTS
@@ -47,13 +52,6 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 const BOARD_PADDING = 16;
 const BOARD_SIZE = SCREEN_WIDTH - BOARD_PADDING * 2;
 const CELL_SIZE = BOARD_SIZE / GRID_SIZE;
-
-// Floating petal spring config (gentle, organic motion)
-const SPRING_CONFIG = {
-  mass: DEFAULT_SPRING_CONFIG.mass,
-  damping: DEFAULT_SPRING_CONFIG.damping,  // Now 20 for gentler motion
-  stiffness: DEFAULT_SPRING_CONFIG.stiffness,
-};
 
 // ============================================================================
 // ANIMATED ELEMENT WRAPPER
@@ -66,6 +64,7 @@ interface AnimatedElementProps {
   isSelected: boolean;
   isMatched: boolean;
   onTap: (index: number) => void;
+  onMatchComplete?: (index: number) => void;
 }
 
 const AnimatedElement: React.FC<AnimatedElementProps> = React.memo(({
@@ -75,6 +74,7 @@ const AnimatedElement: React.FC<AnimatedElementProps> = React.memo(({
   isSelected,
   isMatched,
   onTap,
+  onMatchComplete,
 }) => {
   const { row, col } = indexToPosition(gridIndex);
   
@@ -89,36 +89,62 @@ const AnimatedElement: React.FC<AnimatedElementProps> = React.memo(({
   const opacity = useSharedValue(1);
   const rotation = useSharedValue(0);
 
-  // Animate to new position with floating petal physics
-  useEffect(() => {
-    x.value = withSpring(targetX, SPRING_CONFIG);
-    y.value = withSpring(targetY, SPRING_CONFIG);
-  }, [targetX, targetY]);
+  // Track if bloom animation has completed
+  const bloomCompleteRef = useRef(false);
 
-  // Selection animation - gentle pulse
+  /**
+   * Animate to new position with floating petal physics
+   */
+  useEffect(() => {
+    x.value = withSpring(targetX, PETAL_FLOAT_SPRING);
+    y.value = withSpring(targetY, PETAL_FLOAT_SPRING);
+  }, [targetX, targetY, x, y]);
+
+  /**
+   * Selection animation - gentle pulse
+   */
   useEffect(() => {
     if (isSelected) {
-      scale.value = withSpring(0.92, SPRING_CONFIG);
+      scale.value = withSpring(0.92, PETAL_FLOAT_SPRING);
     } else {
-      scale.value = withSpring(1, SPRING_CONFIG);
+      scale.value = withSpring(1, PETAL_FLOAT_SPRING);
     }
-  }, [isSelected]);
+  }, [isSelected, scale]);
 
-  // Match animation - BLOOM effect (scale up + rotate before disappearing)
+  /**
+   * Match animation - BLOOM effect (scale up + fade out)
+   * Uses the specified scale: 1.2 and opacity fade
+   */
   useEffect(() => {
-    if (isMatched) {
-      // Bloom: scale up and rotate
+    if (isMatched && !bloomCompleteRef.current) {
+      // Bloom: scale up to 1.2 and rotate slightly
       scale.value = withSequence(
-        withSpring(1.3, { ...SPRING_CONFIG, stiffness: 120 }),
-        withTiming(1.4, { duration: 150 })
+        withSpring(BLOOM_ANIMATION_CONFIG.scale, { 
+          ...PETAL_FLOAT_SPRING, 
+          stiffness: 120 
+        }),
+        withTiming(scale.value, { duration: 50 }) // Hold briefly
       );
-      rotation.value = withTiming(Math.PI * 0.25, { duration: 300 }); // 45 degree rotation
-      opacity.value = withTiming(0, { duration: 400 });
-    } else {
+      
+      rotation.value = withTiming(Math.PI * 0.15, { duration: 300 });
+      
+      // Fade out after bloom completes
+      opacity.value = withTiming(0, { 
+        duration: BLOOM_ANIMATION_CONFIG.opacityDuration 
+      }, (finished) => {
+        'worklet';
+        if (finished && onMatchComplete) {
+          bloomCompleteRef.current = true;
+          runOnJS(onMatchComplete)(gridIndex);
+        }
+      });
+    } else if (!isMatched) {
+      // Reset bloom state
+      bloomCompleteRef.current = false;
       opacity.value = 1;
       rotation.value = 0;
     }
-  }, [isMatched]);
+  }, [isMatched, scale, opacity, rotation, gridIndex, onMatchComplete]);
 
   return (
     <ElementNode
@@ -137,27 +163,37 @@ const AnimatedElement: React.FC<AnimatedElementProps> = React.memo(({
 
 AnimatedElement.displayName = 'AnimatedElement';
 
-// Legacy alias for backward compatibility
-const AnimatedGem = AnimatedElement;
-AnimatedGem.displayName = 'AnimatedGem';
-
 // ============================================================================
 // MAIN GAME BOARD COMPONENT
 // ============================================================================
 
 export interface GameBoardProps {
   onScoreChange?: (score: number) => void;
+  onTeamProgressChange?: (progress: number) => void;
+  onLevelComplete?: () => void;
 }
 
-export const GameBoard: React.FC<GameBoardProps> = ({ onScoreChange }) => {
+export const GameBoard: React.FC<GameBoardProps> = ({ 
+  onScoreChange,
+  onTeamProgressChange,
+  onLevelComplete,
+}) => {
   const { 
     grid, 
     phase, 
     selectedIndex, 
     score,
+    teamProgress,
+    isLevelComplete,
     initializeGame, 
-    handleElementTap 
+    handleElementTap,
+    handleSwipe,
   } = useMatch3Engine();
+
+  const contributionParticles = useGameStore((state) => state.contributionParticles);
+
+  // Ref to track match completion callbacks
+  const pendingMatchRef = useRef<Set<number>>(new Set());
 
   // Initialize game on mount
   useEffect(() => {
@@ -169,34 +205,51 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onScoreChange }) => {
     onScoreChange?.(score);
   }, [score, onScoreChange]);
 
-  // Calculate which element was tapped
-  const getTappedElementIndex = useCallback((touchX: number, touchY: number): number => {
+  // Notify parent of team progress changes
+  useEffect(() => {
+    onTeamProgressChange?.(teamProgress);
+  }, [teamProgress, onTeamProgressChange]);
+
+  // Notify parent of level completion
+  useEffect(() => {
+    if (isLevelComplete) {
+      onLevelComplete?.();
+    }
+  }, [isLevelComplete, onLevelComplete]);
+
+  /**
+   * Handle tap with JS callback
+   */
+  const handleTap = useCallback((touchX: number, touchY: number) => {
     const col = Math.floor(touchX / CELL_SIZE);
     const row = Math.floor(touchY / CELL_SIZE);
     
     if (col < 0 || col >= GRID_SIZE || row < 0 || row >= GRID_SIZE) {
-      return -1;
+      return;
     }
     
-    return row * GRID_SIZE + col;
+    const index = row * GRID_SIZE + col;
+    handleElementTap(index);
+  }, [handleElementTap]);
+
+  /**
+   * Handle swipe gesture
+   */
+  const handleSwipeGesture = useCallback((
+    fromIndex: number,
+    direction: 'up' | 'down' | 'left' | 'right'
+  ) => {
+    handleSwipe(fromIndex, direction);
+  }, [handleSwipe]);
+
+  /**
+   * Handle match completion (for data cascade trigger)
+   */
+  const handleMatchComplete = useCallback((index: number) => {
+    // This callback fires after bloom animation completes
+    // The actual data cascade is handled by useMatch3Engine
+    // This is for any UI-specific cleanup if needed
   }, []);
-
-  // Handle tap with JS callback
-  const handleTap = useCallback((touchX: number, touchY: number) => {
-    const index = getTappedElementIndex(touchX, touchY);
-    if (index >= 0) {
-      handleElementTap(index);
-    }
-  }, [getTappedElementIndex, handleElementTap]);
-
-  // Gesture handler for taps
-  const tapGesture = useMemo(() => 
-    Gesture.Tap()
-      .onEnd((event) => {
-        runOnJS(handleTap)(event.x, event.y);
-      }),
-    [handleTap]
-  );
 
   // Background gradient points
   const bgGradientStart = vec(0, 0);
@@ -204,7 +257,7 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onScoreChange }) => {
   const bgCenter = vec(BOARD_SIZE / 2, BOARD_SIZE / 2);
 
   return (
-    <GestureDetector gesture={tapGesture}>
+    <InputController onSwipe={handleSwipeGesture} onTap={handleTap}>
       <Canvas style={styles.canvas}>
         {/* Board Background - Soft Garden Gradient */}
         <RoundedRect
@@ -214,14 +267,13 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onScoreChange }) => {
           height={BOARD_SIZE}
           r={20}
         >
-          {/* Soft pastel garden bokeh gradient */}
           <RadialGradient
             c={bgCenter}
             r={BOARD_SIZE * 0.7}
             colors={[
-              THEME_COLORS.gardenGradient[0], // Light cyan
-              THEME_COLORS.gardenGradient[1], // Light lavender
-              THEME_COLORS.paperCream,         // Warm paper edge
+              THEME_COLORS.gardenGradient[0],
+              THEME_COLORS.gardenGradient[1],
+              THEME_COLORS.paperCream,
             ]}
           />
         </RoundedRect>
@@ -267,11 +319,23 @@ export const GameBoard: React.FC<GameBoardProps> = ({ onScoreChange }) => {
               isSelected={element.index === selectedIndex}
               isMatched={element.isMatched}
               onTap={handleElementTap}
+              onMatchComplete={handleMatchComplete}
+            />
+          ))}
+        </Group>
+
+        {/* Contribution Particles */}
+        <Group>
+          {contributionParticles.map((particle) => (
+            <ContributionParticle
+              key={particle.id}
+              particle={particle}
+              boardSize={BOARD_SIZE}
             />
           ))}
         </Group>
       </Canvas>
-    </GestureDetector>
+    </InputController>
   );
 };
 

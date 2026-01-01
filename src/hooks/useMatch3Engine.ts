@@ -5,15 +5,17 @@
  * IDLE -> SWAPPING -> MATCHING -> FALLING -> REFILLING
  * 
  * Uses flood-fill algorithm for match detection (3+ connected same-color elements)
+ * Features swipe input support and contribution particle emission
  */
 
-import { useCallback, useRef } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { runOnJS } from 'react-native-reanimated';
 import * as Haptics from 'expo-haptics';
 import {
   Element,
   ElementColor,
   GamePhase,
+  LevelState,
   MatchResult,
   GRID_SIZE,
   TOTAL_CELLS,
@@ -23,6 +25,8 @@ import {
   isValidIndex,
   indexToPosition,
   positionToIndex,
+  ContributionParticle,
+  MatchEvent,
 } from '../types';
 import { useGameStore } from '../store/gameStore';
 
@@ -59,13 +63,11 @@ function createElement(index: number, color?: ElementColor): Element {
 
 /**
  * Check if placing a color at index would create an immediate match
- * Used during grid initialization to prevent starting with matches
  */
 function wouldCreateMatch(grid: (Element | null)[], index: number, color: ElementColor): boolean {
   const row = Math.floor(index / GRID_SIZE);
   const col = index % GRID_SIZE;
 
-  // Check horizontal (need 2 of same color to the left)
   if (col >= 2) {
     const left1 = grid[index - 1];
     const left2 = grid[index - 2];
@@ -74,7 +76,6 @@ function wouldCreateMatch(grid: (Element | null)[], index: number, color: Elemen
     }
   }
 
-  // Check vertical (need 2 of same color above)
   if (row >= 2) {
     const up1 = grid[index - GRID_SIZE];
     const up2 = grid[index - 2 * GRID_SIZE];
@@ -97,7 +98,6 @@ function generateInitialGrid(): Element[] {
     let attempts = 0;
     const maxAttempts = 20;
 
-    // Keep trying until we find a color that doesn't create a match
     while (wouldCreateMatch(grid, i, color) && attempts < maxAttempts) {
       color = getRandomColor();
       attempts++;
@@ -131,20 +131,17 @@ function findHorizontalMatches(grid: Element[]): Set<number> {
       if (element.color === matchColor) {
         matchLength++;
       } else {
-        // End of potential match, check if valid
         if (matchLength >= MIN_MATCH) {
           for (let i = matchStart; i < col; i++) {
             matched.add(row * GRID_SIZE + i);
           }
         }
-        // Reset for new potential match
         matchStart = col;
         matchColor = element.color;
         matchLength = 1;
       }
     }
 
-    // Check end of row
     if (matchLength >= MIN_MATCH) {
       for (let i = matchStart; i < GRID_SIZE; i++) {
         matched.add(row * GRID_SIZE + i);
@@ -173,7 +170,6 @@ function findVerticalMatches(grid: Element[]): Set<number> {
       if (element.color === matchColor) {
         matchLength++;
       } else {
-        // End of potential match
         if (matchLength >= MIN_MATCH) {
           for (let i = matchStart; i < row; i++) {
             matched.add(i * GRID_SIZE + col);
@@ -185,7 +181,6 @@ function findVerticalMatches(grid: Element[]): Set<number> {
       }
     }
 
-    // Check end of column
     if (matchLength >= MIN_MATCH) {
       for (let i = matchStart; i < GRID_SIZE; i++) {
         matched.add(i * GRID_SIZE + col);
@@ -197,8 +192,7 @@ function findVerticalMatches(grid: Element[]): Set<number> {
 }
 
 /**
- * Flood fill to find connected matches (for special detection)
- * Uses BFS to find all connected elements of the same color
+ * Flood fill to find connected matches
  */
 function floodFill(grid: Element[], startIndex: number, visited: Set<number>): number[] {
   const connected: number[] = [];
@@ -216,14 +210,13 @@ function floodFill(grid: Element[], startIndex: number, visited: Set<number>): n
 
     connected.push(current);
 
-    // Check 4 neighbors (up, down, left, right)
     const { row, col } = indexToPosition(current);
     
     const neighbors = [
-      row > 0 ? positionToIndex(row - 1, col) : -1,              // up
-      row < GRID_SIZE - 1 ? positionToIndex(row + 1, col) : -1,  // down
-      col > 0 ? positionToIndex(row, col - 1) : -1,              // left
-      col < GRID_SIZE - 1 ? positionToIndex(row, col + 1) : -1,  // right
+      row > 0 ? positionToIndex(row - 1, col) : -1,
+      row < GRID_SIZE - 1 ? positionToIndex(row + 1, col) : -1,
+      col > 0 ? positionToIndex(row, col - 1) : -1,
+      col < GRID_SIZE - 1 ? positionToIndex(row, col + 1) : -1,
     ];
 
     for (const neighbor of neighbors) {
@@ -243,21 +236,18 @@ function detectAllMatches(grid: Element[]): MatchResult[] {
   const horizontalMatches = findHorizontalMatches(grid);
   const verticalMatches = findVerticalMatches(grid);
   
-  // Combine all matched indices
   const allMatched = new Set([...horizontalMatches, ...verticalMatches]);
   
   if (allMatched.size === 0) {
     return [];
   }
 
-  // Group connected matches using flood fill
   const results: MatchResult[] = [];
   const processed = new Set<number>();
 
   for (const index of allMatched) {
     if (processed.has(index)) continue;
 
-    // Find all connected matched gems
     const connected = floodFill(grid, index, new Set());
     const matchedConnected = connected.filter(i => allMatched.has(i));
     
@@ -267,12 +257,31 @@ function detectAllMatches(grid: Element[]): MatchResult[] {
       results.push({
         matchedIndices: matchedConnected,
         count: matchedConnected.length,
-        isSpecial: matchedConnected.length >= 4, // 4+ elements = special
+        isSpecial: matchedConnected.length >= 4,
       });
     }
   }
 
   return results;
+}
+
+/**
+ * Calculate center position of matched indices for particle emission
+ */
+function getMatchCenterPosition(matchedIndices: number[]): { x: number; y: number } {
+  let totalX = 0;
+  let totalY = 0;
+
+  for (const index of matchedIndices) {
+    const { row, col } = indexToPosition(index);
+    totalX += col;
+    totalY += row;
+  }
+
+  return {
+    x: totalX / matchedIndices.length,
+    y: totalY / matchedIndices.length,
+  };
 }
 
 // ============================================================================
@@ -281,20 +290,17 @@ function detectAllMatches(grid: Element[]): MatchResult[] {
 
 /**
  * Apply gravity - elements fall down to fill empty spaces
- * Returns the new grid and a map of movements (fromIndex -> toIndex)
  */
 function applyGravity(grid: Element[]): { 
   newGrid: (Element | null)[]; 
   movements: Map<number, number>;
- } {
+} {
   const newGrid: (Element | null)[] = [...grid];
   const movements = new Map<number, number>();
 
-  // Process column by column, bottom to top
   for (let col = 0; col < GRID_SIZE; col++) {
-    let writePos = GRID_SIZE - 1; // Start writing from bottom
+    let writePos = GRID_SIZE - 1;
 
-    // Scan from bottom to top
     for (let row = GRID_SIZE - 1; row >= 0; row--) {
       const readIndex = row * GRID_SIZE + col;
       const element = newGrid[readIndex];
@@ -303,7 +309,6 @@ function applyGravity(grid: Element[]): {
         const writeIndex = writePos * GRID_SIZE + col;
         
         if (writeIndex !== readIndex) {
-          // Move element down
           movements.set(readIndex, writeIndex);
           newGrid[writeIndex] = { ...element, index: writeIndex };
           newGrid[readIndex] = null;
@@ -313,7 +318,6 @@ function applyGravity(grid: Element[]): {
       }
     }
 
-    // Mark remaining top cells as null (to be refilled)
     for (let row = writePos; row >= 0; row--) {
       const index = row * GRID_SIZE + col;
       newGrid[index] = null;
@@ -346,11 +350,18 @@ export interface UseMatch3EngineReturn {
   selectedIndex: number;
   score: number;
   combo: number;
+  teamProgress: number;
+  isLevelComplete: boolean;
+  moves: number;
+  maxMoves: number;
+  levelState: LevelState;
   
   // Actions
   initializeGame: () => void;
   handleElementTap: (index: number) => void;
+  handleSwipe: (fromIndex: number, direction: 'up' | 'down' | 'left' | 'right') => void;
   processGameLoop: () => Promise<void>;
+  addExtraMoves: (count: number) => void;
   
   // Utilities
   getElementAt: (index: number) => Element | undefined;
@@ -368,15 +379,27 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     selectedIndex,
     score,
     combo,
+    teamProgress,
+    isLevelComplete,
+    moves,
+    maxMoves,
+    levelState,
     setGrid,
     setPhase,
     setSelectedIndex,
     addScore,
+    addContribution,
     incrementCombo,
     resetCombo,
+    addContributionParticle,
+    resetGame,
+    decrementMoves,
+    addMoves,
+    checkWinLossCondition,
   } = useGameStore();
 
   const isProcessingRef = useRef(false);
+  const [lastMatchEvent, setLastMatchEvent] = useState<MatchEvent | null>(null);
 
   /**
    * Initialize a new game
@@ -387,7 +410,8 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     setPhase('IDLE');
     setSelectedIndex(-1);
     resetCombo();
-  }, [setGrid, setPhase, setSelectedIndex, resetCombo]);
+    resetGame();
+  }, [setGrid, setPhase, setSelectedIndex, resetCombo, resetGame]);
 
   /**
    * Get element at specific index
@@ -406,29 +430,99 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
   }, []);
 
   /**
+   * Get target index from swipe direction
+   */
+  const getSwipeTargetIndex = useCallback((
+    fromIndex: number,
+    direction: 'up' | 'down' | 'left' | 'right'
+  ): number | null => {
+    const { row, col } = indexToPosition(fromIndex);
+
+    let targetRow = row;
+    let targetCol = col;
+
+    switch (direction) {
+      case 'up':
+        targetRow = Math.max(0, row - 1);
+        break;
+      case 'down':
+        targetRow = Math.min(GRID_SIZE - 1, row + 1);
+        break;
+      case 'left':
+        targetCol = Math.max(0, col - 1);
+        break;
+      case 'right':
+        targetCol = Math.min(GRID_SIZE - 1, col + 1);
+        break;
+    }
+
+    if (targetRow !== row || targetCol !== col) {
+      return positionToIndex(targetRow, targetCol);
+    }
+
+    return null;
+  }, []);
+
+  /**
+   * Emit contribution particle for a match
+   */
+  const emitContributionParticle = useCallback((
+    matchedIndices: number[],
+    contributionGained: number
+  ) => {
+    // Calculate center position
+    const { x, y } = getMatchCenterPosition(matchedIndices);
+
+    // Create particle
+    const particle: ContributionParticle = {
+      id: `particle_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`,
+      sourceIndex: matchedIndices[Math.floor(matchedIndices.length / 2)],
+      sourceX: x,
+      sourceY: y,
+      contributionAmount: contributionGained,
+      createdAt: Date.now(),
+    };
+
+    addContributionParticle(particle);
+  }, [addContributionParticle]);
+
+  /**
+   * Handle swipe gesture - attempt to swap with adjacent element
+   */
+  const handleSwipe = useCallback((
+    fromIndex: number,
+    direction: 'up' | 'down' | 'left' | 'right'
+  ) => {
+    if (phase !== 'IDLE' || levelState !== 'PLAYING') return;
+    if (!isValidIndex(fromIndex)) return;
+
+    const targetIndex = getSwipeTargetIndex(fromIndex, direction);
+
+    if (targetIndex !== null && isValidSwap(fromIndex, targetIndex)) {
+      // Perform the swap (same logic as tap-swipe)
+      performSwap(fromIndex, targetIndex);
+    }
+  }, [phase, levelState, getSwipeTargetIndex, isValidSwap]);
+
+  /**
    * Handle element tap - select or attempt swap
    */
   const handleElementTap = useCallback((index: number) => {
-    if (phase !== 'IDLE') return;
+    if (phase !== 'IDLE' || levelState !== 'PLAYING') return;
     if (!isValidIndex(index)) return;
 
-    // Haptic feedback on tap
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
     if (selectedIndex === -1) {
-      // No element selected - select this one
       setSelectedIndex(index);
     } else if (selectedIndex === index) {
-      // Tapped same element - deselect
       setSelectedIndex(-1);
     } else if (areAdjacent(selectedIndex, index)) {
-      // Adjacent element - attempt swap
       performSwap(selectedIndex, index);
     } else {
-      // Non-adjacent - select new element
       setSelectedIndex(index);
     }
-  }, [phase, selectedIndex, setSelectedIndex]);
+  }, [phase, levelState, selectedIndex, setSelectedIndex]);
 
   /**
    * Perform swap and trigger game loop
@@ -440,24 +534,19 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     setPhase('SWAPPING');
     setSelectedIndex(-1);
 
-    // Swap elements in grid
     const newGrid = [...grid];
     const temp = { ...newGrid[fromIndex], index: toIndex };
     newGrid[fromIndex] = { ...newGrid[toIndex], index: fromIndex };
     newGrid[toIndex] = temp;
     setGrid(newGrid);
 
-    // Medium haptic for swap
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    // Wait for swap animation
     await new Promise(resolve => setTimeout(resolve, 300));
 
-    // Check for matches
     const matches = detectAllMatches(newGrid);
 
     if (matches.length === 0) {
-      // No matches - swap back
       setPhase('SWAPPING');
       const revertGrid = [...newGrid];
       const temp2 = { ...revertGrid[fromIndex], index: toIndex };
@@ -465,7 +554,6 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
       revertGrid[toIndex] = temp2;
       setGrid(revertGrid);
       
-      // Error haptic for invalid swap
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       
       await new Promise(resolve => setTimeout(resolve, 300));
@@ -474,10 +562,12 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
       return;
     }
 
-    // Process matches cascade
+    // Valid swap - decrement moves
+    decrementMoves();
+
     await processCascade(newGrid);
     isProcessingRef.current = false;
-  }, [grid, setGrid, setPhase, setSelectedIndex]);
+  }, [grid, setGrid, setPhase, setSelectedIndex, decrementMoves]);
 
   /**
    * Process match cascade (matches -> fall -> refill -> repeat)
@@ -487,13 +577,11 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     let cascadeCount = 0;
 
     while (true) {
-      // MATCHING PHASE
       setPhase('MATCHING');
       const matches = detectAllMatches(workingGrid);
       
       if (matches.length === 0) break;
 
-      // Mark matched elements
       const matchedIndices = new Set(matches.flatMap(m => m.matchedIndices));
       workingGrid = workingGrid.map(element => ({
         ...element,
@@ -501,55 +589,64 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
       }));
       setGrid(workingGrid);
 
-      // Calculate score
+      // Calculate score and contribution
       const totalMatched = matchedIndices.size;
       const baseScore = totalMatched * 10;
       const comboMultiplier = cascadeCount + 1;
-      addScore(baseScore * comboMultiplier);
+      const finalScore = baseScore * comboMultiplier;
+
+      addScore(finalScore);
+      addContribution(finalScore);
       incrementCombo();
 
-      // Heavy haptic for match
+      // Check win condition after contribution
+      checkWinLossCondition();
+
+      // Emit contribution particle
+      emitContributionParticle(Array.from(matchedIndices), finalScore);
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
       // Wait for match animation
       await new Promise(resolve => setTimeout(resolve, 400));
 
-      // FALLING PHASE
       setPhase('FALLING');
       const { newGrid: fallenGrid } = applyGravity(workingGrid);
       
-      // Wait for fall animation
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      // REFILLING PHASE
       setPhase('REFILLING');
       workingGrid = refillEmptyCells(fallenGrid);
       setGrid(workingGrid);
 
-      // Light haptic for refill
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-      // Wait for refill animation
       await new Promise(resolve => setTimeout(resolve, 300));
 
       cascadeCount++;
     }
 
-    // Reset combo if no cascades happened
     if (cascadeCount === 0) {
       resetCombo();
     }
 
     setPhase('IDLE');
-  }, [setGrid, setPhase, addScore, incrementCombo, resetCombo]);
+  }, [setGrid, setPhase, addScore, addContribution, incrementCombo, resetCombo, emitContributionParticle, checkWinLossCondition]);
 
   /**
-   * Manual game loop trigger (for testing)
+   * Manual game loop trigger
    */
   const processGameLoop = useCallback(async () => {
     if (phase !== 'IDLE' || isProcessingRef.current) return;
     await processCascade(grid);
   }, [phase, grid, processCascade]);
+
+  /**
+   * Add extra moves (for revive/ad reward)
+   */
+  const addExtraMoves = useCallback((count: number) => {
+    addMoves(count);
+  }, [addMoves]);
 
   return {
     grid,
@@ -557,12 +654,18 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     selectedIndex,
     score,
     combo,
+    teamProgress,
+    isLevelComplete,
+    moves,
+    maxMoves,
+    levelState,
     initializeGame,
     handleElementTap,
+    handleSwipe,
     processGameLoop,
+    addExtraMoves,
     getElementAt,
     isValidSwap,
-    // Legacy aliases
     handleGemTap: handleElementTap,
     getGemAt: getElementAt,
   };

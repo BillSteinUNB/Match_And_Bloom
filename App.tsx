@@ -8,7 +8,12 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, StatusBar, Pressable } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { GameBoard } from './src/components';
+import { 
+  GameBoard, 
+  BackgroundController, 
+  GameOverModal, 
+  WinModal 
+} from './src/components';
 import { useGameStore } from './src/store';
 import './global.css';
 
@@ -74,9 +79,11 @@ interface HUDProps {
   score: number;
   combo: number;
   highScore: number;
+  moves: number;
+  maxMoves: number;
 }
 
-const HUD: React.FC<HUDProps> = ({ score, combo, highScore }) => {
+const HUD: React.FC<HUDProps> = ({ score, combo, highScore, moves, maxMoves }) => {
   return (
     <View style={styles.hud}>
       {/* Guardian Avatar - Left */}
@@ -92,7 +99,17 @@ const HUD: React.FC<HUDProps> = ({ score, combo, highScore }) => {
         <ContributionBar score={score} />
       )}
       
-      {/* Best Score - Right */}
+      {/* Moves Counter - Right Side */}
+      <View style={styles.movesContainer}>
+        <Text style={styles.movesLabel}>MOVES</Text>
+        <Text style={[
+          styles.movesValue,
+          moves <= 5 && styles.movesLow,
+          moves <= 3 && styles.movesCritical
+        ]}>{moves}</Text>
+      </View>
+      
+      {/* Best Score - Far Right */}
       <View style={styles.hudItem}>
         <Text style={styles.hudLabel}>BEST</Text>
         <Text style={styles.hudValue}>{highScore.toLocaleString()}</Text>
@@ -107,7 +124,17 @@ const HUD: React.FC<HUDProps> = ({ score, combo, highScore }) => {
 
 export default function App() {
   const [currentScore, setCurrentScore] = useState(0);
-  const { combo, highScore, resetGame } = useGameStore();
+  const { 
+    combo, 
+    highScore, 
+    moves, 
+    maxMoves,
+    teamProgress,
+    levelState,
+    resetGame,
+    addMoves,
+    setLevelState,
+  } = useGameStore();
 
   const handleScoreChange = useCallback((newScore: number) => {
     setCurrentScore(newScore);
@@ -117,38 +144,77 @@ export default function App() {
     resetGame();
   }, [resetGame]);
 
+  // Handle revive from GameOverModal
+  const handleRevive = useCallback(() => {
+    addMoves(5);
+  }, [addMoves]);
+
+  // Handle give up from GameOverModal
+  const handleGiveUp = useCallback(() => {
+    resetGame();
+  }, [resetGame]);
+
+  // Handle continue from WinModal
+  const handleContinue = useCallback(() => {
+    // Reset game for next level
+    resetGame();
+  }, [resetGame]);
+
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="dark-content" backgroundColor={COLORS.paper} />
-        
-        {/* Header */}
-        <View style={styles.header}>
-          <Text style={styles.title}>Match & Bloom</Text>
-          <Text style={styles.subtitle}>Botanical Zen Edition</Text>
-        </View>
+      <BackgroundController>
+        <SafeAreaView style={styles.container}>
+          <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+          
+          {/* Header */}
+          <View style={styles.header}>
+            <Text style={styles.title}>Match & Bloom</Text>
+            <Text style={styles.subtitle}>Botanical Zen Edition</Text>
+          </View>
 
-        {/* HUD */}
-        <HUD score={currentScore} combo={combo} highScore={highScore} />
+          {/* HUD */}
+          <HUD 
+            score={currentScore} 
+            combo={combo} 
+            highScore={highScore} 
+            moves={moves}
+            maxMoves={maxMoves}
+          />
 
-        {/* Game Board */}
-        <View style={styles.boardContainer}>
-          <GameBoard onScoreChange={handleScoreChange} />
-        </View>
+          {/* Game Board */}
+          <View style={styles.boardContainer}>
+            <GameBoard onScoreChange={handleScoreChange} />
+          </View>
 
-        {/* Footer / Controls */}
-        <View style={styles.footer}>
-          <Pressable 
-            style={({ pressed }) => [
-              styles.button,
-              pressed && styles.buttonPressed
-            ]}
-            onPress={handleNewGame}
-          >
-            <Text style={styles.buttonText}>New Garden</Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
+          {/* Footer / Controls */}
+          <View style={styles.footer}>
+            <Pressable 
+              style={({ pressed }) => [
+                styles.button,
+                pressed && styles.buttonPressed
+              ]}
+              onPress={handleNewGame}
+            >
+              <Text style={styles.buttonText}>New Garden</Text>
+            </Pressable>
+          </View>
+        </SafeAreaView>
+
+        {/* Game Over Modal (Loss) */}
+        <GameOverModal
+          visible={levelState === 'LOST'}
+          teamProgress={teamProgress}
+          onRevive={handleRevive}
+          onGiveUp={handleGiveUp}
+        />
+
+        {/* Win Modal */}
+        <WinModal
+          visible={levelState === 'WON'}
+          score={currentScore}
+          onContinue={handleContinue}
+        />
+      </BackgroundController>
     </GestureHandlerRootView>
   );
 }
@@ -163,7 +229,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: COLORS.paper,
+    backgroundColor: 'transparent',
     alignItems: 'center',
   },
   
@@ -281,6 +347,36 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: COLORS.soil,
     marginTop: 2,
+  },
+  
+  // Moves Counter
+  movesContainer: {
+    alignItems: 'center',
+    backgroundColor: COLORS.frostedWhite,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.frostedBorder,
+    marginRight: 8,
+  },
+  movesLabel: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: COLORS.soilLight,
+    letterSpacing: 1.5,
+  },
+  movesValue: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: COLORS.soil,
+    marginTop: 2,
+  },
+  movesLow: {
+    color: '#FFA726', // Orange warning
+  },
+  movesCritical: {
+    color: '#EF5350', // Red danger
   },
   
   // Combo Container

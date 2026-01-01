@@ -106,6 +106,14 @@ export type GamePhase =
   | 'REFILLING'; // New elements spawning at top
 
 /**
+ * Level state for win/loss conditions
+ */
+export type LevelState = 
+  | 'PLAYING'    // Game in progress
+  | 'WON'        // teamProgress >= 100%
+  | 'LOST';      // moves == 0 AND teamProgress < 100%
+
+/**
  * Match result from flood-fill detection
  */
 export interface MatchResult {
@@ -125,14 +133,54 @@ export interface GameState {
   grid: Element[];
   /** Current game phase */
   phase: GamePhase;
-  /** Player score (Team Contribution) */
+  /** Player score (raw points) */
   score: number;
+  /** Team contribution progress (0-100%) */
+  teamProgress: number;
+  /** Whether level is won */
+  isLevelComplete: boolean;
   /** Current combo multiplier */
   combo: number;
   /** Currently selected element index (-1 if none) */
   selectedIndex: number;
   /** Grid dimensions */
   gridSize: number;
+  /** Current remaining moves */
+  moves: number;
+  /** Maximum moves for the level */
+  maxMoves: number;
+  /** Level state (PLAYING, WON, LOST) */
+  levelState: LevelState;
+}
+
+/**
+ * Contribution particle for visual feedback
+ */
+export interface ContributionParticle {
+  /** Unique ID for the particle */
+  id: string;
+  /** Source grid index where match occurred */
+  sourceIndex: number;
+  /** Source coordinates in screen space */
+  sourceX: number;
+  sourceY: number;
+  /** Amount of contribution this particle represents */
+  contributionAmount: number;
+  /** Timestamp for animation */
+  createdAt: number;
+}
+
+/**
+ * Match event emitted to trigger visual effects
+ */
+export interface MatchEvent {
+  /** Indices of matched elements */
+  matchedIndices: number[];
+  /** Total contribution gained from this match */
+  contributionGained: number;
+  /** Center position of match for particle emission */
+  centerX: number;
+  centerY: number;
 }
 
 /**
@@ -182,6 +230,41 @@ export const DEFAULT_SPRING_CONFIG: SpringConfig = {
   mass: 0.5,
   damping: 20,      // Increased from 12 for smoother, gentler motion
   stiffness: 80,    // Slightly reduced for floatier feel
+} as const;
+
+/**
+ * Soft floating spring config for "Petal Float" effect
+ * Mass 0.8, damping 20, stiffness 90 - soft, floating settle
+ */
+export const PETAL_FLOAT_SPRING: SpringConfig = {
+  mass: 0.8,
+  damping: 20,
+  stiffness: 90,
+} as const;
+
+/**
+ * Bloom animation config - scale up and fade out
+ */
+export const BLOOM_ANIMATION_CONFIG = {
+  scale: 1.2,
+  duration: 400,
+  opacityDuration: 400,
+} as const;
+
+// ============================================================================
+// CONTRIBUTION SYSTEM TYPES
+// ============================================================================
+
+/**
+ * Contribution system configuration
+ */
+export const CONTRIBUTION_CONFIG = {
+  /** Score needed to reach 100% team progress */
+  targetScore: 10000,
+  /** Points per matched element */
+  pointsPerMatch: 10,
+  /** Bonus multiplier for chain reactions */
+  comboMultiplierBase: 1,
 } as const;
 
 /**

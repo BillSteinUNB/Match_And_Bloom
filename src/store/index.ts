@@ -1,1 +1,1 @@
-export { useGameStore, selectGrid, selectPhase, selectScore, selectCombo, selectSelectedIndex, selectHighScore } from './gameStore';
+export { useGameStore, selectGrid, selectPhase, selectScore, selectCombo, selectSelectedIndex, selectHighScore, selectTeamProgress, selectIsLevelComplete, selectContributionParticles } from './gameStore';
