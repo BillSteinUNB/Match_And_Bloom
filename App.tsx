@@ -4,7 +4,7 @@
  * A Match-3 game with "Botanical Zen" aesthetic.
  * Built with Expo, React Native Skia, and Reanimated.
  * 
- * Phase 6: Added persistence, asset pre-loading, and settings modal.
+ * Phase 8: Added Main Menu and Level Select workflow
  */
 
 import React, { useState, useCallback } from 'react';
@@ -17,6 +17,8 @@ import {
   WinModal,
   SettingsModal,
   TextureOverlay,
+  MainMenu,
+  LevelSelect,
 } from './src/components';
 import { useGameStore } from './src/store';
 import { useAmbientSound, useCachedResources } from './src/hooks';
@@ -146,6 +148,134 @@ const HUD: React.FC<HUDProps> = ({ score, combo, highScore, moves, maxMoves, max
 };
 
 // ============================================================================
+// GAME SCREEN COMPONENT
+// ============================================================================
+
+interface GameScreenProps {
+  currentScore: number;
+  combo: number;
+  highScore: number;
+  moves: number;
+  maxMoves: number;
+  teamProgress: number;
+  levelState: 'PLAYING' | 'WON' | 'LOST';
+  currentLevel: number;
+  currentLevelConfig: { name?: string; targetProgress: number };
+  isMuted: boolean;
+  toggleMute: () => void;
+  handleScoreChange: (score: number) => void;
+  handleNewGame: () => void;
+  handleRevive: () => void;
+  handleGiveUp: () => void;
+  handleContinue: () => void;
+  handleOpenSettings: () => void;
+}
+
+const GameScreen: React.FC<GameScreenProps> = ({
+  currentScore,
+  combo,
+  highScore,
+  moves,
+  maxMoves,
+  teamProgress,
+  levelState,
+  currentLevel,
+  currentLevelConfig,
+  isMuted,
+  toggleMute,
+  handleScoreChange,
+  handleNewGame,
+  handleRevive,
+  handleGiveUp,
+  handleContinue,
+  handleOpenSettings,
+}) => {
+  return (
+    <>
+      {/* Header */}
+      <View style={styles.header}>
+        <Text style={styles.title}>Match & Bloom</Text>
+        <View style={styles.levelIndicator}>
+          <Text style={styles.levelText}>Level {currentLevel} of {getTotalLevels()}</Text>
+          {currentLevelConfig.name && (
+            <Text style={styles.levelName}>{currentLevelConfig.name}</Text>
+          )}
+        </View>
+      </View>
+
+      {/* HUD */}
+      <HUD 
+        score={currentScore} 
+        combo={combo} 
+        highScore={highScore} 
+        moves={moves}
+        maxMoves={maxMoves}
+        maxScore={currentLevelConfig.targetProgress}
+        onSettingsPress={handleOpenSettings}
+      />
+
+      {/* Game Board */}
+      <View style={styles.boardContainer}>
+        <GameBoard onScoreChange={handleScoreChange} />
+      </View>
+
+      {/* Footer / Controls */}
+      <View style={styles.footer}>
+        <View style={styles.footerControls}>
+          {/* Sound Toggle */}
+          <Pressable 
+            style={({ pressed }) => [
+              styles.iconButton,
+              pressed && styles.buttonPressed
+            ]}
+            onPress={toggleMute}
+          >
+            <Text style={styles.iconButtonText}>{isMuted ? '🔇' : '🔊'}</Text>
+          </Pressable>
+
+          {/* New Garden Button */}
+          <Pressable 
+            style={({ pressed }) => [
+              styles.button,
+              pressed && styles.buttonPressed
+            ]}
+            onPress={handleNewGame}
+          >
+            <Text style={styles.buttonText}>New Garden</Text>
+          </Pressable>
+
+          {/* Restart Level */}
+          <Pressable 
+            style={({ pressed }) => [
+              styles.iconButton,
+              pressed && styles.buttonPressed
+            ]}
+            onPress={handleNewGame}
+          >
+            <Text style={styles.iconButtonText}>🔄</Text>
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Game Over Modal (Loss) */}
+      <GameOverModal
+        visible={levelState === 'LOST'}
+        teamProgress={teamProgress}
+        onRevive={handleRevive}
+        onGiveUp={handleGiveUp}
+      />
+
+      {/* Win Modal */}
+      <WinModal
+        visible={levelState === 'WON'}
+        score={currentScore}
+        onContinue={handleContinue}
+      />
+    </>
+  );
+};
+
+// ============================================================================
 // MAIN APP COMPONENT
 // ============================================================================
 
@@ -157,6 +287,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
   const { 
+    screen,
     combo, 
     highScore, 
     moves, 
@@ -170,7 +301,9 @@ export default function App() {
     isMuted,
     toggleMute,
     nextLevel,
-    restartLevel,
+    goToMenu,
+    recordLevelWin,
+    setScreen,
   } = useGameStore();
 
   // Initialize ambient sound
@@ -191,18 +324,24 @@ export default function App() {
 
   // Handle give up from GameOverModal
   const handleGiveUp = useCallback(() => {
-    resetGame();
-  }, [resetGame]);
+    goToMenu();
+  }, [goToMenu]);
 
   // Handle continue from WinModal
   const handleContinue = useCallback(() => {
+    // Special handling for Level 1 - go to menu after tutorial completion
+    if (currentLevel === 1) {
+      recordLevelWin(currentLevel, currentScore);
+      goToMenu();
+      return;
+    }
+    
     const hasMore = nextLevel();
     if (!hasMore) {
       // Game complete - all levels finished!
-      // For now, just restart from level 1
-      resetGame();
+      goToMenu();
     }
-  }, [nextLevel, resetGame]);
+  }, [currentLevel, currentScore, nextLevel, goToMenu, recordLevelWin]);
 
   // Settings modal handlers
   const handleOpenSettings = useCallback(() => {
@@ -213,10 +352,64 @@ export default function App() {
     setIsSettingsOpen(false);
   }, []);
 
+  // Navigation handlers
+  const handleNavigateToLevelSelect = useCallback(() => {
+    setScreen('LEVEL_SELECT');
+  }, [setScreen]);
+
+  const handleStartLevel = useCallback(() => {
+    setScreen('GAME');
+  }, [setScreen]);
+
   // Show loading screen while assets are being loaded
   if (!isLoadingComplete) {
     return <LoadingScreen />;
   }
+
+  // Render the appropriate screen based on state
+  const renderScreen = () => {
+    switch (screen) {
+      case 'MENU':
+        return (
+          <MainMenu
+            onNavigateToLevelSelect={handleNavigateToLevelSelect}
+            onOpenSettings={handleOpenSettings}
+          />
+        );
+      
+      case 'LEVEL_SELECT':
+        return (
+          <LevelSelect
+            onBack={goToMenu}
+            onLevelSelect={handleStartLevel}
+          />
+        );
+      
+      case 'GAME':
+      default:
+        return (
+          <GameScreen
+            currentScore={currentScore}
+            combo={combo}
+            highScore={highScore}
+            moves={moves}
+            maxMoves={maxMoves}
+            teamProgress={teamProgress}
+            levelState={levelState}
+            currentLevel={currentLevel}
+            currentLevelConfig={currentLevelConfig}
+            isMuted={isMuted}
+            toggleMute={toggleMute}
+            handleScoreChange={handleScoreChange}
+            handleNewGame={handleNewGame}
+            handleRevive={handleRevive}
+            handleGiveUp={handleGiveUp}
+            handleContinue={handleContinue}
+            handleOpenSettings={handleOpenSettings}
+          />
+        );
+    }
+  };
 
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
@@ -224,94 +417,17 @@ export default function App() {
         <SafeAreaView style={styles.container}>
           <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
           
-          {/* Header */}
-          <View style={styles.header}>
-            <Text style={styles.title}>Match & Bloom</Text>
-            <View style={styles.levelIndicator}>
-              <Text style={styles.levelText}>Level {currentLevel} of {getTotalLevels()}</Text>
-              {currentLevelConfig.name && (
-                <Text style={styles.levelName}>{currentLevelConfig.name}</Text>
-              )}
-            </View>
-          </View>
-
-          {/* HUD */}
-          <HUD 
-            score={currentScore} 
-            combo={combo} 
-            highScore={highScore} 
-            moves={moves}
-            maxMoves={maxMoves}
-            maxScore={currentLevelConfig.targetProgress}
-            onSettingsPress={handleOpenSettings}
-          />
-
-          {/* Game Board */}
-          <View style={styles.boardContainer}>
-            <GameBoard onScoreChange={handleScoreChange} />
-          </View>
-
-          {/* Footer / Controls */}
-          <View style={styles.footer}>
-            <View style={styles.footerControls}>
-              {/* Sound Toggle */}
-              <Pressable 
-                style={({ pressed }) => [
-                  styles.iconButton,
-                  pressed && styles.buttonPressed
-                ]}
-                onPress={toggleMute}
-              >
-                <Text style={styles.iconButtonText}>{isMuted ? '🔇' : '🔊'}</Text>
-              </Pressable>
-
-              {/* New Garden Button */}
-              <Pressable 
-                style={({ pressed }) => [
-                  styles.button,
-                  pressed && styles.buttonPressed
-                ]}
-                onPress={handleNewGame}
-              >
-                <Text style={styles.buttonText}>New Garden</Text>
-              </Pressable>
-
-              {/* Restart Level */}
-              <Pressable 
-                style={({ pressed }) => [
-                  styles.iconButton,
-                  pressed && styles.buttonPressed
-                ]}
-                onPress={restartLevel}
-              >
-                <Text style={styles.iconButtonText}>🔄</Text>
-              </Pressable>
-            </View>
-          </View>
+          {/* Render current screen */}
+          {renderScreen()}
         </SafeAreaView>
 
-        {/* Game Over Modal (Loss) */}
-        <GameOverModal
-          visible={levelState === 'LOST'}
-          teamProgress={teamProgress}
-          onRevive={handleRevive}
-          onGiveUp={handleGiveUp}
-        />
-
-        {/* Win Modal */}
-        <WinModal
-          visible={levelState === 'WON'}
-          score={currentScore}
-          onContinue={handleContinue}
-        />
-
-        {/* Settings Modal */}
+        {/* Settings Modal - always available */}
         <SettingsModal
           visible={isSettingsOpen}
           onClose={handleCloseSettings}
         />
 
-        {/* Texture Overlay - Organic paper grain effect (on top of everything) */}
+        {/* Texture Overlay - Organic paper grain effect */}
         <TextureOverlay />
       </BackgroundController>
     </GestureHandlerRootView>

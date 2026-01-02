@@ -12,13 +12,36 @@ import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Element, GamePhase, LevelState, ContributionParticle, LevelConfig } from '../types';
-import { getFirstLevel, getNextLevel, getLevelById } from '../data';
+import { getFirstLevel, getNextLevel, getLevelById, getTotalLevels } from '../data';
+
+// ============================================================================
+// SCREEN STATE TYPES
+// ============================================================================
+
+export type ScreenState = 'MENU' | 'LEVEL_SELECT' | 'GAME';
+
+/**
+ * Per-level completion result
+ */
+export interface LevelResult {
+  completed: boolean;
+  bestScore: number;
+  bestStars: number;
+  lastPlayedAt?: number;
+}
 
 // ============================================================================
 // STORE INTERFACE
 // ============================================================================
 
 interface GameStore {
+  // Screen State (controls navigation)
+  screen: ScreenState;
+  hasCompletedTutorial: boolean;
+  lastVisitedLevel: number;
+  highestUnlockedLevel: number;
+  levelResults: Record<number, LevelResult>;
+  
   // State
   grid: Element[];
   phase: GamePhase;
@@ -43,6 +66,13 @@ interface GameStore {
   
   // Hydration State
   _hasHydrated: boolean;          // True after persistence has loaded
+  
+  // Screen Actions
+  setScreen: (screen: ScreenState) => void;
+  goToMenu: () => void;
+  goToLevelSelect: () => void;
+  startLevel: (levelId: number) => void;
+  recordLevelWin: (levelId: number, score: number) => void;
   
   // Actions
   setGrid: (grid: Element[]) => void;
@@ -93,6 +123,14 @@ const firstLevel = getFirstLevel();
 // ============================================================================
 
 const initialState = {
+  // Screen State
+  screen: 'GAME' as ScreenState,
+  hasCompletedTutorial: false,
+  lastVisitedLevel: 1,
+  highestUnlockedLevel: 1,
+  levelResults: {} as Record<number, LevelResult>,
+  
+  // Game State
   grid: [] as Element[],
   phase: 'IDLE' as GamePhase,
   selectedIndex: -1,
@@ -124,6 +162,70 @@ export const useGameStore = create<GameStore>()(
 
       // Hydration setter
       setHasHydrated: (state: boolean) => set({ _hasHydrated: state }),
+
+      // ============================================================================
+      // SCREEN ACTIONS
+      // ============================================================================
+
+      setScreen: (screen: ScreenState) => set({ screen }),
+
+      goToMenu: () => set({ screen: 'MENU' }),
+
+      goToLevelSelect: () => set({ screen: 'LEVEL_SELECT' }),
+
+      startLevel: (levelId: number) => {
+        const levelConfig = getLevelById(levelId);
+        if (!levelConfig) {
+          console.warn(`[GameStore] Level ${levelId} not found`);
+          return;
+        }
+        
+        set({
+          screen: 'GAME',
+          currentLevel: levelId,
+          currentLevelConfig: levelConfig,
+          moves: levelConfig.moves,
+          maxMoves: levelConfig.moves,
+          score: 0,
+          teamProgress: 0,
+          isLevelComplete: false,
+          levelState: 'PLAYING',
+          combo: 0,
+          selectedIndex: -1,
+          grid: [],
+          contributionParticles: [],
+          lastVisitedLevel: levelId,
+        });
+      },
+
+      recordLevelWin: (levelId: number, score: number) => {
+        const { levelResults, highestUnlockedLevel } = get();
+        const existing = levelResults[levelId] || { completed: false, bestScore: 0, bestStars: 0 };
+        
+        // Calculate stars based on score (simple formula)
+        const stars = score >= 10000 ? 3 : score >= 7000 ? 2 : 1;
+        
+        const newResult: LevelResult = {
+          completed: true,
+          bestScore: Math.max(existing.bestScore, score),
+          bestStars: Math.max(existing.bestStars, stars),
+          lastPlayedAt: Date.now(),
+        };
+        
+        const newHighestUnlocked = Math.max(highestUnlockedLevel, levelId + 1);
+        const totalLevels = getTotalLevels();
+        const actualHighestUnlocked = Math.min(newHighestUnlocked, totalLevels);
+        
+        set({
+          levelResults: { ...levelResults, [levelId]: newResult },
+          highestUnlockedLevel: actualHighestUnlocked,
+          hasCompletedTutorial: levelId === 1 ? true : get().hasCompletedTutorial,
+        });
+      },
+
+      // ============================================================================
+      // GRID & GAME ACTIONS (existing)
+      // ============================================================================
 
       // Grid management
       setGrid: (grid: Element[]) => set({ grid }),
@@ -362,11 +464,19 @@ export const useGameStore = create<GameStore>()(
       storage: createJSONStorage(() => AsyncStorage),
       // Only persist essential data, not ephemeral game state
       partialize: (state) => ({
+        // Screen & Progression State (persisted)
+        screen: state.screen,
+        hasCompletedTutorial: state.hasCompletedTutorial,
+        lastVisitedLevel: state.lastVisitedLevel,
+        highestUnlockedLevel: state.highestUnlockedLevel,
+        levelResults: state.levelResults,
+        
+        // Game State (persisted)
         currentLevel: state.currentLevel,
         highScore: state.highScore,
         isMuted: state.isMuted,
         isHapticsEnabled: state.isHapticsEnabled,
-        // Persist level progress so player can resume mid-level
+        // Resume mid-level progress
         teamProgress: state.teamProgress,
         moves: state.moves,
         score: state.score,
@@ -379,6 +489,15 @@ export const useGameStore = create<GameStore>()(
           state.currentLevelConfig = levelConfig;
           state.maxMoves = levelConfig.moves;
           state._hasHydrated = true;
+          
+          // On first launch (tutorial not completed), start in GAME mode at Level 1
+          if (!state.hasCompletedTutorial) {
+            state.screen = 'GAME';
+            state.currentLevel = 1;
+          } else {
+            // Subsequent launches start at menu
+            state.screen = 'MENU';
+          }
         }
       },
     }
@@ -406,3 +525,7 @@ export const selectCurrentLevelConfig = (state: GameStore) => state.currentLevel
 export const selectIsMuted = (state: GameStore) => state.isMuted;
 export const selectIsHapticsEnabled = (state: GameStore) => state.isHapticsEnabled;
 export const selectHasHydrated = (state: GameStore) => state._hasHydrated;
+export const selectScreen = (state: GameStore) => state.screen;
+export const selectHasCompletedTutorial = (state: GameStore) => state.hasCompletedTutorial;
+export const selectHighestUnlockedLevel = (state: GameStore) => state.highestUnlockedLevel;
+export const selectLevelResults = (state: GameStore) => state.levelResults;

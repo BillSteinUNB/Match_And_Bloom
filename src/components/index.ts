@@ -31,6 +31,14 @@ export { SettingsModal } from './SettingsModal';
 export { TextureOverlay } from './TextureOverlay';
 export type { TextureOverlayProps } from './TextureOverlay';
 
+// MainMenu exports (Botanical Zen entry screen)
+export { MainMenu } from './MainMenu';
+export type { MainMenuProps } from './MainMenu';
+
+// LevelSelect exports (Campaign level selection grid)
+export { LevelSelect } from './LevelSelect';
+export type { LevelSelectProps } from './LevelSelect';
+
 // Legacy aliases for backward compatibility (re-export for convenience)
 import { ElementNode as GemNode } from './ElementNode';
 import type { ElementNodeProps as GemNodeProps } from './ElementNode';
