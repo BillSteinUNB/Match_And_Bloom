@@ -5,7 +5,7 @@
  * IDLE -> SWAPPING -> MATCHING -> FALLING -> REFILLING
  * 
  * Uses flood-fill algorithm for match detection (3+ connected same-color elements)
- * Features swipe input support and contribution particle emission
+ * Features swipe input support, contribution particle emission, and level config support
  */
 
 import { useCallback, useRef, useState } from 'react';
@@ -27,8 +27,11 @@ import {
   positionToIndex,
   ContributionParticle,
   MatchEvent,
+  CellType,
+  LevelConfig,
 } from '../types';
 import { useGameStore } from '../store/gameStore';
+import { soundManager, getChimeForCombo } from '../utils';
 
 // ============================================================================
 // UTILITY FUNCTIONS
@@ -89,21 +92,44 @@ function wouldCreateMatch(grid: (Element | null)[], index: number, color: Elemen
 
 /**
  * Generate initial grid without any matches
+ * Supports LevelConfig for obstacles (rocks, locks)
  */
-function generateInitialGrid(): Element[] {
+function generateInitialGrid(levelConfig?: LevelConfig): Element[] {
   const grid: (Element | null)[] = new Array(TOTAL_CELLS).fill(null);
 
   for (let i = 0; i < TOTAL_CELLS; i++) {
-    let color = getRandomColor();
-    let attempts = 0;
-    const maxAttempts = 20;
-
-    while (wouldCreateMatch(grid, i, color) && attempts < maxAttempts) {
-      color = getRandomColor();
-      attempts++;
+    const row = Math.floor(i / GRID_SIZE);
+    const col = i % GRID_SIZE;
+    
+    // Check if this cell has a special type from level config
+    let cellType = CellType.RANDOM;
+    if (levelConfig?.grid && levelConfig.grid[row] && levelConfig.grid[row][col] !== undefined) {
+      cellType = levelConfig.grid[row][col];
     }
+    
+    // Handle cell types
+    if (cellType === CellType.ROCK) {
+      // Rocks are represented as special elements that can't be matched
+      // For now, we'll skip them - they need special rendering
+      // TODO: Implement rock element type
+      grid[i] = createElement(i); // Placeholder - will be replaced with rock element
+    } else if (cellType === CellType.LOCK) {
+      // Locked elements need to be unlocked before they can be moved
+      // TODO: Implement locked element state
+      grid[i] = createElement(i); // Placeholder - will add isLocked property
+    } else {
+      // Random element - avoid creating matches
+      let color = getRandomColor();
+      let attempts = 0;
+      const maxAttempts = 20;
 
-    grid[i] = createElement(i, color);
+      while (wouldCreateMatch(grid, i, color) && attempts < maxAttempts) {
+        color = getRandomColor();
+        attempts++;
+      }
+
+      grid[i] = createElement(i, color);
+    }
   }
 
   return grid as Element[];
@@ -384,6 +410,8 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     moves,
     maxMoves,
     levelState,
+    currentLevelConfig,
+    isMuted,
     setGrid,
     setPhase,
     setSelectedIndex,
@@ -402,16 +430,20 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
   const [lastMatchEvent, setLastMatchEvent] = useState<MatchEvent | null>(null);
 
   /**
-   * Initialize a new game
+   * Initialize a new game with current level config
    */
   const initializeGame = useCallback(() => {
-    const newGrid = generateInitialGrid();
+    const newGrid = generateInitialGrid(currentLevelConfig);
     setGrid(newGrid);
     setPhase('IDLE');
     setSelectedIndex(-1);
     resetCombo();
-    resetGame();
-  }, [setGrid, setPhase, setSelectedIndex, resetCombo, resetGame]);
+    
+    // Start ambient music
+    if (!isMuted) {
+      soundManager.playAmbient();
+    }
+  }, [setGrid, setPhase, setSelectedIndex, resetCombo, currentLevelConfig, isMuted]);
 
   /**
    * Get element at specific index
@@ -540,6 +572,8 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     newGrid[toIndex] = temp;
     setGrid(newGrid);
 
+    // Play swap sound
+    soundManager.playSwap();
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     await new Promise(resolve => setTimeout(resolve, 300));
@@ -599,11 +633,15 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
       addContribution(finalScore);
       incrementCombo();
 
+      // Play match chime based on combo (harmonic stacking: C, E, G)
+      soundManager.playMatchChime(comboMultiplier);
+
       // Check win condition after contribution
       checkWinLossCondition();
 
-      // Emit contribution particle
+      // Emit contribution particle and play bloom sound
       emitContributionParticle(Array.from(matchedIndices), finalScore);
+      soundManager.playBloom();
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 

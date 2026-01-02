@@ -3,18 +3,23 @@
  * 
  * A Match-3 game with "Botanical Zen" aesthetic.
  * Built with Expo, React Native Skia, and Reanimated.
+ * 
+ * Phase 6: Added persistence, asset pre-loading, and settings modal.
  */
 
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, StatusBar, Pressable } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, StatusBar, Pressable, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { 
   GameBoard, 
   BackgroundController, 
   GameOverModal, 
-  WinModal 
+  WinModal,
+  SettingsModal,
 } from './src/components';
 import { useGameStore } from './src/store';
+import { useAmbientSound, useCachedResources } from './src/hooks';
+import { getTotalLevels } from './src/data';
 import './global.css';
 
 // ============================================================================
@@ -32,6 +37,20 @@ const COLORS = {
   leafGreen: '#A0E8AF',
   frostedWhite: 'rgba(255, 255, 255, 0.7)',
   frostedBorder: 'rgba(212, 175, 55, 0.3)',
+};
+
+// ============================================================================
+// LOADING SCREEN COMPONENT
+// ============================================================================
+
+const LoadingScreen: React.FC = () => {
+  return (
+    <View style={styles.loadingContainer}>
+      <Text style={styles.loadingTitle}>🌸</Text>
+      <Text style={styles.loadingText}>Loading Garden...</Text>
+      <ActivityIndicator size="large" color={COLORS.goldBorder} style={styles.spinner} />
+    </View>
+  );
 };
 
 // ============================================================================
@@ -81,9 +100,11 @@ interface HUDProps {
   highScore: number;
   moves: number;
   maxMoves: number;
+  maxScore: number;
+  onSettingsPress: () => void;
 }
 
-const HUD: React.FC<HUDProps> = ({ score, combo, highScore, moves, maxMoves }) => {
+const HUD: React.FC<HUDProps> = ({ score, combo, highScore, moves, maxMoves, maxScore, onSettingsPress }) => {
   return (
     <View style={styles.hud}>
       {/* Guardian Avatar - Left */}
@@ -96,7 +117,7 @@ const HUD: React.FC<HUDProps> = ({ score, combo, highScore, moves, maxMoves }) =
           <Text style={styles.comboLabel}>BLOOM CHAIN</Text>
         </View>
       ) : (
-        <ContributionBar score={score} />
+        <ContributionBar score={score} maxScore={maxScore} />
       )}
       
       {/* Moves Counter - Right Side */}
@@ -109,11 +130,16 @@ const HUD: React.FC<HUDProps> = ({ score, combo, highScore, moves, maxMoves }) =
         ]}>{moves}</Text>
       </View>
       
-      {/* Best Score - Far Right */}
-      <View style={styles.hudItem}>
-        <Text style={styles.hudLabel}>BEST</Text>
-        <Text style={styles.hudValue}>{highScore.toLocaleString()}</Text>
-      </View>
+      {/* Settings Gear - Far Right */}
+      <Pressable 
+        style={({ pressed }) => [
+          styles.settingsButton,
+          pressed && styles.settingsButtonPressed,
+        ]}
+        onPress={onSettingsPress}
+      >
+        <Text style={styles.settingsButtonText}>⚙️</Text>
+      </Pressable>
     </View>
   );
 };
@@ -123,7 +149,12 @@ const HUD: React.FC<HUDProps> = ({ score, combo, highScore, moves, maxMoves }) =
 // ============================================================================
 
 export default function App() {
+  // Asset pre-loading (keeps splash screen until ready)
+  const isLoadingComplete = useCachedResources();
+  
   const [currentScore, setCurrentScore] = useState(0);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  
   const { 
     combo, 
     highScore, 
@@ -133,8 +164,16 @@ export default function App() {
     levelState,
     resetGame,
     addMoves,
-    setLevelState,
+    currentLevel,
+    currentLevelConfig,
+    isMuted,
+    toggleMute,
+    nextLevel,
+    restartLevel,
   } = useGameStore();
+
+  // Initialize ambient sound
+  useAmbientSound();
 
   const handleScoreChange = useCallback((newScore: number) => {
     setCurrentScore(newScore);
@@ -156,9 +195,27 @@ export default function App() {
 
   // Handle continue from WinModal
   const handleContinue = useCallback(() => {
-    // Reset game for next level
-    resetGame();
-  }, [resetGame]);
+    const hasMore = nextLevel();
+    if (!hasMore) {
+      // Game complete - all levels finished!
+      // For now, just restart from level 1
+      resetGame();
+    }
+  }, [nextLevel, resetGame]);
+
+  // Settings modal handlers
+  const handleOpenSettings = useCallback(() => {
+    setIsSettingsOpen(true);
+  }, []);
+
+  const handleCloseSettings = useCallback(() => {
+    setIsSettingsOpen(false);
+  }, []);
+
+  // Show loading screen while assets are being loaded
+  if (!isLoadingComplete) {
+    return <LoadingScreen />;
+  }
 
   return (
     <GestureHandlerRootView style={styles.gestureRoot}>
@@ -169,7 +226,12 @@ export default function App() {
           {/* Header */}
           <View style={styles.header}>
             <Text style={styles.title}>Match & Bloom</Text>
-            <Text style={styles.subtitle}>Botanical Zen Edition</Text>
+            <View style={styles.levelIndicator}>
+              <Text style={styles.levelText}>Level {currentLevel} of {getTotalLevels()}</Text>
+              {currentLevelConfig.name && (
+                <Text style={styles.levelName}>{currentLevelConfig.name}</Text>
+              )}
+            </View>
           </View>
 
           {/* HUD */}
@@ -179,6 +241,8 @@ export default function App() {
             highScore={highScore} 
             moves={moves}
             maxMoves={maxMoves}
+            maxScore={currentLevelConfig.targetProgress}
+            onSettingsPress={handleOpenSettings}
           />
 
           {/* Game Board */}
@@ -188,15 +252,40 @@ export default function App() {
 
           {/* Footer / Controls */}
           <View style={styles.footer}>
-            <Pressable 
-              style={({ pressed }) => [
-                styles.button,
-                pressed && styles.buttonPressed
-              ]}
-              onPress={handleNewGame}
-            >
-              <Text style={styles.buttonText}>New Garden</Text>
-            </Pressable>
+            <View style={styles.footerControls}>
+              {/* Sound Toggle */}
+              <Pressable 
+                style={({ pressed }) => [
+                  styles.iconButton,
+                  pressed && styles.buttonPressed
+                ]}
+                onPress={toggleMute}
+              >
+                <Text style={styles.iconButtonText}>{isMuted ? '🔇' : '🔊'}</Text>
+              </Pressable>
+
+              {/* New Garden Button */}
+              <Pressable 
+                style={({ pressed }) => [
+                  styles.button,
+                  pressed && styles.buttonPressed
+                ]}
+                onPress={handleNewGame}
+              >
+                <Text style={styles.buttonText}>New Garden</Text>
+              </Pressable>
+
+              {/* Restart Level */}
+              <Pressable 
+                style={({ pressed }) => [
+                  styles.iconButton,
+                  pressed && styles.buttonPressed
+                ]}
+                onPress={restartLevel}
+              >
+                <Text style={styles.iconButtonText}>🔄</Text>
+              </Pressable>
+            </View>
           </View>
         </SafeAreaView>
 
@@ -213,6 +302,12 @@ export default function App() {
           visible={levelState === 'WON'}
           score={currentScore}
           onContinue={handleContinue}
+        />
+
+        {/* Settings Modal */}
+        <SettingsModal
+          visible={isSettingsOpen}
+          onClose={handleCloseSettings}
         />
       </BackgroundController>
     </GestureHandlerRootView>
@@ -233,6 +328,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   
+  // Loading Screen
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: COLORS.paper,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingTitle: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  loadingText: {
+    fontSize: 18,
+    fontWeight: '500',
+    color: COLORS.soil,
+    letterSpacing: 1,
+  },
+  spinner: {
+    marginTop: 24,
+  },
+  
   // Header
   header: {
     paddingTop: 16,
@@ -244,7 +360,6 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.soil,
     letterSpacing: 1,
-    // Note: For true Nunito/Lora fonts, would need expo-font
   },
   subtitle: {
     fontSize: 12,
@@ -379,6 +494,25 @@ const styles = StyleSheet.create({
     color: '#EF5350', // Red danger
   },
   
+  // Settings Button
+  settingsButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.frostedWhite,
+    borderWidth: 1,
+    borderColor: COLORS.frostedBorder,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  settingsButtonPressed: {
+    backgroundColor: COLORS.paperCream,
+    transform: [{ scale: 0.95 }],
+  },
+  settingsButtonText: {
+    fontSize: 20,
+  },
+  
   // Combo Container
   comboContainer: {
     flex: 1,
@@ -440,5 +574,46 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.soil,
     letterSpacing: 1,
+  },
+  
+  // Level Indicator
+  levelIndicator: {
+    alignItems: 'center',
+    marginTop: 4,
+  },
+  levelText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORS.soilLight,
+    letterSpacing: 0.5,
+  },
+  levelName: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: COLORS.soilLight,
+    letterSpacing: 0.5,
+    marginTop: 2,
+    fontStyle: 'italic',
+  },
+  
+  // Footer Controls
+  footerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  iconButton: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: COLORS.frostedWhite,
+    borderWidth: 1,
+    borderColor: COLORS.frostedBorder,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  iconButtonText: {
+    fontSize: 22,
   },
 });

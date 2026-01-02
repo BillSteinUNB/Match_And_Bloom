@@ -302,6 +302,73 @@ export const GRID_SIZE = 8;
 export const TOTAL_CELLS = GRID_SIZE * GRID_SIZE; // 64
 export const MIN_MATCH = 3;
 
+// ============================================================================
+// LEVEL CONFIGURATION TYPES
+// ============================================================================
+
+/**
+ * Cell types for level grid configuration
+ * Used to define obstacles and special cells in level layouts
+ */
+export enum CellType {
+  /** Random element - filled with random ElementType */
+  RANDOM = 0,
+  /** Rock obstacle - immovable, cannot be matched or swapped */
+  ROCK = 1,
+  /** Locked cell - needs adjacent match to unlock before it can be moved */
+  LOCK = 2,
+}
+
+/**
+ * Level configuration defining board layout, difficulty, and objectives
+ */
+export interface LevelConfig {
+  /** Unique level identifier */
+  id: number;
+  /** Display name for the level */
+  name: string;
+  /** 
+   * Grid layout as 2D array of CellTypes
+   * 0 = Random element, 1 = Rock (obstacle), 2 = Lock
+   * If not provided, generates fully random grid
+   */
+  grid?: CellType[][];
+  /** Number of moves allowed for this level */
+  moves: number;
+  /** Target score/progress to win (replaces 10000 default) */
+  targetProgress: number;
+  /** Whether this is a tutorial level with guided hints */
+  isTutorial?: boolean;
+  /** Tutorial hint text to display */
+  tutorialHint?: string;
+}
+
+/**
+ * Level progress tracking for persistence
+ */
+export interface LevelProgress {
+  /** Level ID */
+  levelId: number;
+  /** Whether level has been completed */
+  completed: boolean;
+  /** Best score achieved on this level */
+  bestScore: number;
+  /** Number of stars earned (1-3) */
+  stars: number;
+}
+
+/**
+ * Campaign/world structure for level organization
+ */
+export interface LevelWorld {
+  /** World identifier */
+  id: number;
+  /** World name (e.g., "Spring Garden", "Summer Bloom") */
+  name: string;
+  /** Levels in this world */
+  levels: LevelConfig[];
+}
+
 /**
  * All available element types for random selection
  */

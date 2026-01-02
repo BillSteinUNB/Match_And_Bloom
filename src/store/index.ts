@@ -1,1 +1,1 @@
-export { useGameStore, selectGrid, selectPhase, selectScore, selectCombo, selectSelectedIndex, selectHighScore, selectTeamProgress, selectIsLevelComplete, selectContributionParticles } from './gameStore';
+export { useGameStore, selectGrid, selectPhase, selectScore, selectCombo, selectSelectedIndex, selectHighScore, selectTeamProgress, selectIsLevelComplete, selectContributionParticles, selectMoves, selectMaxMoves, selectLevelState, selectCurrentLevel, selectCurrentLevelConfig, selectIsMuted, selectIsHapticsEnabled, selectHasHydrated } from './gameStore';
