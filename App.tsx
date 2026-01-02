@@ -305,6 +305,8 @@ export default function App() {
     goToMenu,
     recordLevelWin,
     setScreen,
+    goToLevelSelect,
+    restartLevel,
   } = useGameStore();
 
   // Initialize ambient sound
@@ -312,6 +314,57 @@ export default function App() {
 
   // DIAGNOSTIC: Set to true to disable Skia rendering and isolate iOS crash
   const DIAGNOSTIC_DISABLE_SKIA = __DEV__ && false;
+
+  // ============================================================================
+  // EVENT HANDLERS - Missing implementations
+  // ============================================================================
+
+  const handleNavigateToLevelSelect = useCallback(() => {
+    goToLevelSelect();
+  }, [goToLevelSelect]);
+
+  const handleOpenSettings = useCallback(() => {
+    setIsSettingsOpen(true);
+  }, []);
+
+  const handleCloseSettings = useCallback(() => {
+    setIsSettingsOpen(false);
+  }, []);
+
+  const handleStartLevel = useCallback((levelId: number) => {
+    // startLevel is already called in LevelSelect component
+    // This handler just transitions to GAME screen
+    // The actual level start is handled by the store's startLevel method
+  }, []);
+
+  const handleScoreChange = useCallback((newScore: number) => {
+    setCurrentScore(newScore);
+  }, []);
+
+  const handleNewGame = useCallback(() => {
+    // Reset the current level using the store
+    restartLevel();
+  }, [restartLevel]);
+
+  const handleRevive = useCallback(() => {
+    // Give player 5 extra moves to continue
+    addMoves(5);
+  }, [addMoves]);
+
+  const handleGiveUp = useCallback(() => {
+    // Go back to menu
+    goToMenu();
+  }, [goToMenu]);
+
+  const handleContinue = useCallback(() => {
+    // Record the win and advance to next level
+    recordLevelWin(currentLevel, currentScore);
+    const hasNext = nextLevel();
+    if (!hasNext) {
+      // Game complete - go to menu
+      goToMenu();
+    }
+  }, [currentLevel, currentScore, recordLevelWin, nextLevel, goToMenu]);
 
   // Show loading screen while assets are being loaded
   if (!isLoadingComplete) {
