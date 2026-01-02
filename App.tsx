@@ -310,57 +310,8 @@ export default function App() {
   // Initialize ambient sound
   useAmbientSound();
 
-  const handleScoreChange = useCallback((newScore: number) => {
-    setCurrentScore(newScore);
-  }, []);
-
-  const handleNewGame = useCallback(() => {
-    resetGame();
-  }, [resetGame]);
-
-  // Handle revive from GameOverModal
-  const handleRevive = useCallback(() => {
-    addMoves(5);
-  }, [addMoves]);
-
-  // Handle give up from GameOverModal
-  const handleGiveUp = useCallback(() => {
-    goToMenu();
-  }, [goToMenu]);
-
-  // Handle continue from WinModal
-  const handleContinue = useCallback(() => {
-    // Special handling for Level 1 - go to menu after tutorial completion
-    if (currentLevel === 1) {
-      recordLevelWin(currentLevel, currentScore);
-      goToMenu();
-      return;
-    }
-    
-    const hasMore = nextLevel();
-    if (!hasMore) {
-      // Game complete - all levels finished!
-      goToMenu();
-    }
-  }, [currentLevel, currentScore, nextLevel, goToMenu, recordLevelWin]);
-
-  // Settings modal handlers
-  const handleOpenSettings = useCallback(() => {
-    setIsSettingsOpen(true);
-  }, []);
-
-  const handleCloseSettings = useCallback(() => {
-    setIsSettingsOpen(false);
-  }, []);
-
-  // Navigation handlers
-  const handleNavigateToLevelSelect = useCallback(() => {
-    setScreen('LEVEL_SELECT');
-  }, [setScreen]);
-
-  const handleStartLevel = useCallback(() => {
-    setScreen('GAME');
-  }, [setScreen]);
+  // DIAGNOSTIC: Set to true to disable Skia rendering and isolate iOS crash
+  const DIAGNOSTIC_DISABLE_SKIA = __DEV__ && false;
 
   // Show loading screen while assets are being loaded
   if (!isLoadingComplete) {
@@ -420,7 +371,21 @@ export default function App() {
             <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
             
             {/* Render current screen */}
-            {renderScreen()}
+            {DIAGNOSTIC_DISABLE_SKIA ? (
+              <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+                <Text style={{ fontSize: 24, color: '#4A4A4A', marginBottom: 20 }}>
+                  🔧 Diagnostic Mode
+                </Text>
+                <Text style={{ fontSize: 16, color: '#6B6B6B' }}>
+                  Skia rendering disabled
+                </Text>
+                <Text style={{ fontSize: 14, color: '#6B6B6B', marginTop: 8 }}>
+                  If this shows, crash is in Skia/Reanimated
+                </Text>
+              </View>
+            ) : (
+              renderScreen()
+            )}
           </SafeAreaView>
 
           {/* Settings Modal - always available */}
