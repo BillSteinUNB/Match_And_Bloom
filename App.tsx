@@ -8,8 +8,9 @@
  */
 
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, StatusBar, Pressable, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, Pressable, ActivityIndicator } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { 
   GameBoard, 
   BackgroundController, 
@@ -412,25 +413,27 @@ export default function App() {
   };
 
   return (
-    <GestureHandlerRootView style={styles.gestureRoot}>
-      <BackgroundController>
-        <SafeAreaView style={styles.container}>
-          <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
-          
-          {/* Render current screen */}
-          {renderScreen()}
-        </SafeAreaView>
+    <SafeAreaProvider>
+      <GestureHandlerRootView style={styles.gestureRoot}>
+        <BackgroundController>
+          <SafeAreaView style={styles.container} edges={['top', 'bottom']}>
+            <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+            
+            {/* Render current screen */}
+            {renderScreen()}
+          </SafeAreaView>
 
-        {/* Settings Modal - always available */}
-        <SettingsModal
-          visible={isSettingsOpen}
-          onClose={handleCloseSettings}
-        />
+          {/* Settings Modal - always available */}
+          <SettingsModal
+            visible={isSettingsOpen}
+            onClose={handleCloseSettings}
+          />
 
-        {/* Texture Overlay - Organic paper grain effect */}
-        <TextureOverlay />
-      </BackgroundController>
-    </GestureHandlerRootView>
+          {/* Texture Overlay - Organic paper grain effect */}
+          <TextureOverlay />
+        </BackgroundController>
+      </GestureHandlerRootView>
+    </SafeAreaProvider>
   );
 }
 
