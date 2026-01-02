@@ -23,6 +23,7 @@ import {
   Paint,
   RoundedRect,
   Circle,
+  Skia,
 } from '@shopify/react-native-skia';
 import Animated, {
   useAnimatedStyle,
@@ -96,6 +97,30 @@ export const BackgroundController: React.FC<BackgroundControllerProps> = ({ chil
     return interpolate(floatAnim.value, [0, 1], [-5, 5]);
   });
 
+  // BREATHING ANIMATION: Slow sine wave scale transform for the bloomed layer
+  // Scale: 1.0 -> 1.05 over 20 seconds, creates "living garden" feel
+  const breathingAnim = useSharedValue(0);
+  React.useEffect(() => {
+    breathingAnim.value = withRepeat(
+      withTiming(1, { duration: 20000, easing: Easing.inOut(Easing.sin) }),
+      -1,
+      true
+    );
+  }, [breathingAnim]);
+
+  // Calculate breathing scale (1.0 to 1.05) - used directly in Skia transform
+  const breathingTransform = useDerivedValue(() => {
+    const scale = interpolate(breathingAnim.value, [0, 1], [1.0, 1.05]);
+    // Return transformation matrix that scales from center
+    const translateX = (SCREEN_WIDTH * (1 - scale)) / 2;
+    const translateY = (SCREEN_HEIGHT * (1 - scale)) / 2;
+    return [
+      { translateX },
+      { translateY },
+      { scale },
+    ];
+  });
+
   return (
     <View style={styles.container}>
       {/* Skia Canvas Background */}
@@ -155,8 +180,12 @@ export const BackgroundController: React.FC<BackgroundControllerProps> = ({ chil
 
         {/* ============================================================ */}
         {/* LAYER B: Bloomed Garden (Top Layer - Opacity = teamProgress) */}
+        {/* With Breathing Animation (slow scale 1.0 -> 1.05)            */}
         {/* ============================================================ */}
-        <Group opacity={bloomedOpacity}>
+        <Group 
+          opacity={bloomedOpacity}
+          transform={breathingTransform}
+        >
           {/* Vibrant base gradient */}
           <Rect x={0} y={0} width={SCREEN_WIDTH} height={SCREEN_HEIGHT}>
             <LinearGradient

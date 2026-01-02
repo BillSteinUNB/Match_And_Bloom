@@ -16,6 +16,7 @@ import {
   GameOverModal, 
   WinModal,
   SettingsModal,
+  TextureOverlay,
 } from './src/components';
 import { useGameStore } from './src/store';
 import { useAmbientSound, useCachedResources } from './src/hooks';
@@ -309,6 +310,9 @@ export default function App() {
           visible={isSettingsOpen}
           onClose={handleCloseSettings}
         />
+
+        {/* Texture Overlay - Organic paper grain effect (on top of everything) */}
+        <TextureOverlay />
       </BackgroundController>
     </GestureHandlerRootView>
   );

@@ -4,7 +4,7 @@
  * Handles:
  * - Starting/stopping ambient music based on game state
  * - Respecting mute settings
- * - Cleanup on unmount
+ * - Cleanup on unmount (properly unloads Sound objects to prevent memory leaks)
  */
 
 import { useEffect, useRef } from 'react';
@@ -16,6 +16,7 @@ export function useAmbientSound() {
   const isMuted = useGameStore((state) => state.isMuted);
   const levelState = useGameStore((state) => state.levelState);
   const isPlayingRef = useRef(false);
+  const isMountedRef = useRef(true);
 
   // Handle mute state changes
   useEffect(() => {
@@ -31,6 +32,8 @@ export function useAmbientSound() {
   // Handle app state changes (pause when app goes to background)
   useEffect(() => {
     const handleAppStateChange = (nextAppState: AppStateStatus) => {
+      if (!isMountedRef.current) return;
+      
       if (nextAppState === 'background' || nextAppState === 'inactive') {
         soundManager.pauseAmbient();
       } else if (nextAppState === 'active' && !isMuted && levelState === 'PLAYING') {
@@ -45,11 +48,19 @@ export function useAmbientSound() {
     };
   }, [isMuted, levelState]);
 
-  // Cleanup on unmount
+  // Cleanup on unmount - CRITICAL: Unload all sounds to prevent memory leaks
   useEffect(() => {
+    isMountedRef.current = true;
+    
     return () => {
+      isMountedRef.current = false;
       soundManager.stopAmbient();
       isPlayingRef.current = false;
+      
+      // Full cleanup: unload all Sound objects to prevent memory leaks on restart
+      soundManager.cleanup().catch((err) => {
+        console.warn('[useAmbientSound] Cleanup error:', err);
+      });
     };
   }, []);
 
@@ -68,7 +79,7 @@ export function useAmbientSound() {
 
   return {
     startAmbient: () => {
-      if (!isMuted) {
+      if (!isMuted && isMountedRef.current) {
         soundManager.playAmbient();
         isPlayingRef.current = true;
       }

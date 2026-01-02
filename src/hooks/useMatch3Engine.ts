@@ -427,7 +427,34 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
   } = useGameStore();
 
   const isProcessingRef = useRef(false);
+  const lastHapticTimeRef = useRef(0);
+  const pendingSwipeRef = useRef<{ fromIndex: number; direction: 'up' | 'down' | 'left' | 'right' } | null>(null);
   const [lastMatchEvent, setLastMatchEvent] = useState<MatchEvent | null>(null);
+
+  // Haptic debounce constant (100ms minimum between haptic triggers)
+  const HAPTIC_DEBOUNCE_MS = 100;
+
+  /**
+   * Debounced haptic feedback to prevent "buzzing" from rapid triggers
+   */
+  const triggerHaptic = useCallback((style: Haptics.ImpactFeedbackStyle) => {
+    const now = Date.now();
+    if (now - lastHapticTimeRef.current >= HAPTIC_DEBOUNCE_MS) {
+      lastHapticTimeRef.current = now;
+      Haptics.impactAsync(style);
+    }
+  }, []);
+
+  /**
+   * Debounced notification haptic feedback
+   */
+  const triggerNotificationHaptic = useCallback((type: Haptics.NotificationFeedbackType) => {
+    const now = Date.now();
+    if (now - lastHapticTimeRef.current >= HAPTIC_DEBOUNCE_MS) {
+      lastHapticTimeRef.current = now;
+      Haptics.notificationAsync(type);
+    }
+  }, []);
 
   /**
    * Initialize a new game with current level config
@@ -520,13 +547,20 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
 
   /**
    * Handle swipe gesture - attempt to swap with adjacent element
+   * Supports input buffering: if swiping while processing, queue the swipe
    */
   const handleSwipe = useCallback((
     fromIndex: number,
     direction: 'up' | 'down' | 'left' | 'right'
   ) => {
-    if (phase !== 'IDLE' || levelState !== 'PLAYING') return;
+    if (levelState !== 'PLAYING') return;
     if (!isValidIndex(fromIndex)) return;
+
+    // If processing, buffer the swipe for execution after cascade settles
+    if (phase !== 'IDLE' || isProcessingRef.current) {
+      pendingSwipeRef.current = { fromIndex, direction };
+      return;
+    }
 
     const targetIndex = getSwipeTargetIndex(fromIndex, direction);
 
@@ -540,10 +574,11 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
    * Handle element tap - select or attempt swap
    */
   const handleElementTap = useCallback((index: number) => {
-    if (phase !== 'IDLE' || levelState !== 'PLAYING') return;
+    // Input guard: ignore all input while processing
+    if (phase !== 'IDLE' || levelState !== 'PLAYING' || isProcessingRef.current) return;
     if (!isValidIndex(index)) return;
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
 
     if (selectedIndex === -1) {
       setSelectedIndex(index);
@@ -554,7 +589,7 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
     } else {
       setSelectedIndex(index);
     }
-  }, [phase, levelState, selectedIndex, setSelectedIndex]);
+  }, [phase, levelState, selectedIndex, setSelectedIndex, triggerHaptic]);
 
   /**
    * Perform swap and trigger game loop
@@ -574,7 +609,7 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
 
     // Play swap sound
     soundManager.playSwap();
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    triggerHaptic(Haptics.ImpactFeedbackStyle.Medium);
 
     await new Promise(resolve => setTimeout(resolve, 300));
 
@@ -588,11 +623,14 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
       revertGrid[toIndex] = temp2;
       setGrid(revertGrid);
       
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      triggerNotificationHaptic(Haptics.NotificationFeedbackType.Warning);
       
       await new Promise(resolve => setTimeout(resolve, 300));
       setPhase('IDLE');
       isProcessingRef.current = false;
+      
+      // Check for buffered swipe input
+      executePendingSwipe();
       return;
     }
 
@@ -601,7 +639,24 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
 
     await processCascade(newGrid);
     isProcessingRef.current = false;
-  }, [grid, setGrid, setPhase, setSelectedIndex, decrementMoves]);
+    
+    // Check for buffered swipe input after cascade completes
+    executePendingSwipe();
+  }, [grid, setGrid, setPhase, setSelectedIndex, decrementMoves, triggerHaptic, triggerNotificationHaptic]);
+
+  /**
+   * Execute any pending/buffered swipe after processing completes
+   */
+  const executePendingSwipe = useCallback(() => {
+    const pending = pendingSwipeRef.current;
+    if (pending && phase === 'IDLE' && !isProcessingRef.current) {
+      pendingSwipeRef.current = null;
+      // Use setTimeout to avoid blocking and allow state to settle
+      setTimeout(() => {
+        handleSwipe(pending.fromIndex, pending.direction);
+      }, 50);
+    }
+  }, [phase, handleSwipe]);
 
   /**
    * Process match cascade (matches -> fall -> refill -> repeat)
@@ -643,7 +698,7 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
       emitContributionParticle(Array.from(matchedIndices), finalScore);
       soundManager.playBloom();
 
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Heavy);
 
       // Wait for match animation
       await new Promise(resolve => setTimeout(resolve, 400));
@@ -657,7 +712,7 @@ export function useMatch3Engine(): UseMatch3EngineReturn {
       workingGrid = refillEmptyCells(fallenGrid);
       setGrid(workingGrid);
 
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      triggerHaptic(Haptics.ImpactFeedbackStyle.Light);
 
       await new Promise(resolve => setTimeout(resolve, 300));
 

@@ -27,6 +27,10 @@ export type { WinModalProps } from './WinModal';
 // SettingsModal exports (Settings gear overlay)
 export { SettingsModal } from './SettingsModal';
 
+// TextureOverlay exports (Global film grain effect)
+export { TextureOverlay } from './TextureOverlay';
+export type { TextureOverlayProps } from './TextureOverlay';
+
 // Legacy aliases for backward compatibility (re-export for convenience)
 import { ElementNode as GemNode } from './ElementNode';
 import type { ElementNodeProps as GemNodeProps } from './ElementNode';
